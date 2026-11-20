@@ -620,40 +620,99 @@ export async function POST(
     if (!chain) {
       return NextResponse.json({ error: "Slot nicht gefunden." }, { status: 404 });
     }
-    const isAssignee = chain.current_assignee_id === user.id;
-    const isAdmin = user.role === "SCHIEDSRICHTERWART" || user.role === "ADMIN";
-    if (!isAssignee && !isAdmin) {
-      return NextResponse.json({ error: "Keine Berechtigung." }, { status: 403 });
+    const isPendingMode = chain.status === "PENDING_HANDOFF";
+    const responsibleUserId = isPendingMode
+      ? chain.pending_assignee_id
+      : chain.current_assignee_id;
+    const isAuthorized =
+      responsibleUserId === user.id ||
+      chain.current_assignee_id === user.id ||
+      user.role === "SCHIEDSRICHTERWART" ||
+      user.role === "ADMIN";
+    if (!isAuthorized) {
+      return NextResponse.json(
+        { error: "Nur die angesetzte/vorgeschlagene Person oder der Schiedsrichterwart darf weitergeben." },
+        { status: 403 }
+      );
     }
-    const currentAssigneeId = chain.current_assignee_id || user.id;
+    const currentAssigneeId = responsibleUserId || user.id;
+    const fromUser = (await repo.users.findById(currentAssigneeId)) || user;
     const game = (await repo.games.findById(chain.game_id))!;
-    const reasonType = String(body.reason_type || "REGULAR");
+    const reasonType = String(body.reasonType || body.reason_type || "REGULAR");
+    const publicNote = String(body.publicNote || body.note || "").trim();
+    const hardshipReasonConfidential = String(
+      body.hardshipReasonConfidential || body.hardship_reason_confidential || ""
+    ).trim();
+
+    if (reasonType === "VOLUNTEER_EXEMPT" && !fromUser.is_volunteer_exempt) {
+      return NextResponse.json({
+        error: "Ehrenamtliche Befreiung (§ 7) erfordert die Freigabe durch den Vorstand im Spielerprofil.",
+      }, { status: 400 });
+    }
+    if (reasonType === "HARDSHIP" && !hardshipReasonConfidential) {
+      return NextResponse.json({
+        error: "Für einen Härtefallantrag (§ 8) ist eine vertrauliche Begründung für den Kassenwart erforderlich.",
+      }, { status: 400 });
+    }
+
     const isShortNotice = isShortNotice48h(game.kickoff_at);
+    if (isShortNotice && reasonType === "REGULAR" && !publicNote) {
+      return NextResponse.json({
+        error: "Kurzfristige Verhinderung (< 48h nach § 4 Abs. 2): Bitte kurzen Verhinderungsgrund angeben.",
+      }, { status: 400 });
+    }
 
-    const { player: nextPlayer, roundNumber } = await findNextFreePlayerAsync(game.season_id, {
-      excludeUserIds: [currentAssigneeId],
+    const previousEvents = await repo.events.listByChainId(chainId);
+    const previousFromIds = previousEvents
+      .map((e) => e.from_user_id)
+      .filter((id): id is number => id !== null && id !== undefined);
+    const excludeIds = [fromUser.id, ...previousFromIds];
+
+    let { player: nextPlayer } = await findNextFreePlayerAsync(game.season_id, {
+      excludeUserIds: excludeIds,
       gameIdToAvoidSameGameDouble: game.id,
-      excludeVolunteerExempt: reasonType === "VOLUNTEER_EXEMPT",
+      excludeVolunteerExempt: true,
+      restrictToMinDeployed: true,
     });
+
     if (!nextPlayer) {
-      return NextResponse.json({ error: "Keine freie Person in der Mannschaftsliste gefunden." }, { status: 400 });
+      const res2 = await findNextFreePlayerAsync(game.season_id, {
+        excludeUserIds: [fromUser.id],
+        gameIdToAvoidSameGameDouble: game.id,
+        excludeVolunteerExempt: true,
+        restrictToMinDeployed: true,
+      });
+      nextPlayer = res2.player;
     }
 
-    let feeTotal = 1500;
-    let teamPot = 500;
-    let payoutPool = 1000;
-    let paymentStatus = "OPEN";
-
-    if (reasonType === "SQUAD_NOMINATION" || reasonType === "VOLUNTEER_EXEMPT") {
-      feeTotal = 0;
-      teamPot = 0;
-      payoutPool = 0;
-      paymentStatus = "NOT_APPLICABLE";
+    if (!nextPlayer) {
+      const res3 = await findNextFreePlayerAsync(game.season_id, {
+        excludeUserIds: [fromUser.id],
+        gameIdToAvoidSameGameDouble: game.id,
+        excludeVolunteerExempt: true,
+      });
+      nextPlayer = res3.player;
     }
+
+    if (!nextPlayer) {
+      return NextResponse.json({
+        error: "Keine freie Person mehr auf der Mannschaftsliste verfügbar. Bitte Schiedsrichterwart kontaktieren.",
+      }, { status: 400 });
+    }
+
+    const isPaidHandoff = reasonType === "REGULAR" || reasonType === "HARDSHIP";
+    const feeTotal = isPaidHandoff ? 1500 : 0;
+    const teamPot = isPaidHandoff ? 500 : 0;
+    const payoutPool = isPaidHandoff ? 1000 : 0;
+    const paymentStatus = isPaidHandoff ? "OPEN" : "NOT_APPLICABLE";
+    const hardshipStatus = reasonType === "HARDSHIP" ? "PENDING" : "NONE";
+    const eventType = reasonType === "SQUAD_NOMINATION" ? "SQUAD_NOMINATION" : "REGULAR_HANDOFF";
 
     await repo.chains.update(chainId, {
-      pending_assignee_id: nextPlayer.id,
       status: "PENDING_HANDOFF",
+      current_assignee_id: isPendingMode ? (chain.current_assignee_id || fromUser.id) : fromUser.id,
+      pending_assignee_id: nextPlayer.id,
+      voluntary_requester_id: null,
       payout_pool_cents: chain.payout_pool_cents + payoutPool,
       team_pot_cents: chain.team_pot_cents + teamPot,
     });
@@ -661,21 +720,31 @@ export async function POST(
     const event = await repo.events.create({
       chain_id: chainId,
       game_id: game.id,
-      event_type: "REGULAR_HANDOFF",
-      from_user_id: currentAssigneeId,
+      event_type: eventType,
+      from_user_id: fromUser.id,
       to_user_id: nextPlayer.id,
       reason_type: reasonType,
       is_short_notice: isShortNotice,
-      public_note: body.note ? String(body.note).trim() : null,
+      public_note: publicNote || null,
       fee_total_cents: feeTotal,
       team_pot_cents: teamPot,
       payout_pool_cents: payoutPool,
       payment_status: paymentStatus,
+      hardship_status: hardshipStatus,
+      hardship_reason_confidential: reasonType === "HARDSHIP" ? hardshipReasonConfidential : null,
     });
 
-    const fromUser = await repo.users.findById(currentAssigneeId);
+    const chatType =
+      reasonType === "SQUAD_NOMINATION"
+        ? "SQUAD_NOMINATION"
+        : reasonType === "VOLUNTEER_EXEMPT"
+        ? "VOLUNTEER_EXEMPT"
+        : reasonType === "HARDSHIP"
+        ? "HARDSHIP"
+        : "REGULAR_HANDOFF";
+
     const chatMessage = buildGroupChatMessage({
-      type: "REGULAR_HANDOFF",
+      type: chatType as any,
       gameTitle: game.title,
       kickoffAt: game.kickoff_at,
       slotNumber: chain.slot_number,
@@ -710,6 +779,8 @@ export async function POST(
 
     const isAuthorized =
       targetUserId === user.id ||
+      chain.current_assignee_id === user.id ||
+      chain.pending_assignee_id === user.id ||
       user.role === "SCHIEDSRICHTERWART" ||
       user.role === "ADMIN";
 
@@ -831,12 +902,16 @@ export async function POST(
     if (!chain) {
       return NextResponse.json({ error: "Slot nicht gefunden." }, { status: 404 });
     }
-    const isAssignee = chain.current_assignee_id === user.id;
-    const isAdmin = user.role === "SCHIEDSRICHTERWART" || user.role === "ADMIN";
-    if (!isAssignee && !isAdmin) {
-      return NextResponse.json({ error: "Keine Berechtigung." }, { status: 403 });
+    const responsibleUserId = chain.pending_assignee_id ?? chain.current_assignee_id;
+    const isAuthorized =
+      responsibleUserId === user.id ||
+      chain.current_assignee_id === user.id ||
+      user.role === "SCHIEDSRICHTERWART" ||
+      user.role === "ADMIN";
+    if (!isAuthorized) {
+      return NextResponse.json({ error: "Nur der aktuell zugewiesene Schiedsrichter entscheidet." }, { status: 403 });
     }
-    const approved = Boolean(body.approved);
+    const action = String(body.action || (body.approved ? "APPROVE" : "REJECT")).toUpperCase();
     const volunteerId = chain.voluntary_requester_id;
     if (!volunteerId) {
       return NextResponse.json({ error: "Keine freiwillige Anfrage vorhanden." }, { status: 400 });
@@ -844,19 +919,39 @@ export async function POST(
     const game = (await repo.games.findById(chain.game_id))!;
     const volunteer = await repo.users.findById(volunteerId);
 
-    if (approved) {
+    if (action === "REJECT") {
       await repo.chains.update(chainId, {
-        current_assignee_id: volunteerId,
+        current_assignee_id: responsibleUserId,
+        pending_assignee_id: null,
+        status: "CONFIRMED",
         voluntary_requester_id: null,
-        status: "ASSIGNED",
+      });
+      await repo.events.create({
+        chain_id: chainId,
+        game_id: game.id,
+        event_type: "VOLUNTEER_REJECTED",
+        from_user_id: responsibleUserId,
+        to_user_id: volunteerId,
+        public_note: "Übernahme abgelehnt – zugewiesener Spieler automatisch als bestätigt gesetzt",
+      });
+      return NextResponse.json({ ok: true, status: "REJECTED" });
+    }
+
+    if (action === "APPROVE" && volunteer) {
+      await repo.chains.update(chainId, {
+        current_assignee_id: volunteer.id,
+        pending_assignee_id: null,
+        voluntary_requester_id: null,
+        status: "CONFIRMED",
       });
       await repo.events.create({
         chain_id: chainId,
         game_id: game.id,
         event_type: "VOLUNTEER_APPROVED",
-        from_user_id: chain.current_assignee_id,
-        to_user_id: volunteerId,
-        public_note: "Freiwillige Übernahme bestätigt.",
+        from_user_id: responsibleUserId,
+        to_user_id: volunteer.id,
+        reason_type: "VOLUNTARY_TAKEOVER",
+        public_note: "Übernahme bestätigt",
       });
 
       // Spätere Ansetzung des Freiwilligen suchen & automatisch kostenlos weitergeben (§ 5 Abs. 5)
@@ -898,7 +993,7 @@ export async function POST(
         }
       }
 
-      const fromUser = await repo.users.findById(chain.current_assignee_id!);
+      const fromUser = await repo.users.findById(responsibleUserId || chain.current_assignee_id!);
       const chatMessage = buildGroupChatMessage({
         type: "VOLUNTARY_APPROVED",
         gameTitle: game.title,
@@ -912,21 +1007,9 @@ export async function POST(
         laterToName,
       });
       return NextResponse.json({ ok: true, chatMessage });
-    } else {
-      await repo.chains.update(chainId, {
-        voluntary_requester_id: null,
-        status: "ASSIGNED",
-      });
-      await repo.events.create({
-        chain_id: chainId,
-        game_id: game.id,
-        event_type: "VOLUNTEER_REJECTED",
-        from_user_id: chain.current_assignee_id,
-        to_user_id: volunteerId,
-        public_note: "Freiwillige Übernahme abgelehnt.",
-      });
-      return NextResponse.json({ ok: true, status: "REJECTED" });
     }
+
+    return NextResponse.json({ error: "Ungültige Aktion." }, { status: 400 });
   }
 
   // 14. /api/chains/:id/report-deployed
