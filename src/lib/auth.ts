@@ -87,6 +87,16 @@ export function getSessionUser(req: IncomingMessage): SafeUser | null {
   return safeUser;
 }
 
+const userSessionCache = new Map<number, { user: SafeUser; expiresAt: number }>();
+
+export function invalidateUserSessionCache(userId?: number) {
+  if (userId) {
+    userSessionCache.delete(userId);
+  } else {
+    userSessionCache.clear();
+  }
+}
+
 export async function getSessionUserFromHeader(
   cookieHeader: string | null
 ): Promise<SafeUser | null> {
@@ -105,10 +115,17 @@ export async function getSessionUserFromHeader(
   const userId = verifySessionToken(token);
   if (!userId) return null;
 
+  const now = Date.now();
+  const cached = userSessionCache.get(userId);
+  if (cached && cached.expiresAt > now) {
+    return cached.user;
+  }
+
   const row = await repo.users.findById(userId);
   if (!row) return null;
 
   const { password_hash: _, ...safeUser } = row;
+  userSessionCache.set(userId, { user: safeUser, expiresAt: now + 60_000 });
   return safeUser;
 }
 

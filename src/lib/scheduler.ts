@@ -193,17 +193,21 @@ export async function findNextFreePlayerAsync(
     restrictToMinDeployed?: boolean;
   } = {}
 ): Promise<{ player: SafeUser | null; roundNumber: number }> {
-  const activePlayers = await getSortedActivePlayersAsync();
-  const seasonGames = await repo.games.listBySeason(seasonId);
+  const [activePlayers, seasonGames] = await Promise.all([
+    getSortedActivePlayersAsync(),
+    repo.games.listBySeason(seasonId),
+  ]);
   const gameIds = seasonGames.map((g) => g.id);
-  const chains = await repo.chains.listByGameIds(gameIds);
-  let skippedUserIds: number[] = [];
-  if (options.gameIdToAvoidSameGameDouble) {
-    const events = await repo.events.listByGameIds([options.gameIdToAvoidSameGameDouble]);
-    skippedUserIds = events
-      .filter((e) => e.event_type === "HANDOFF_SKIPPED_UNAVAILABLE" && e.from_user_id)
-      .map((e) => e.from_user_id as number);
-  }
+  const [chains, events] = await Promise.all([
+    repo.chains.listByGameIds(gameIds),
+    options.gameIdToAvoidSameGameDouble
+      ? repo.events.listByGameIds([options.gameIdToAvoidSameGameDouble])
+      : Promise.resolve([]),
+  ]);
+  const skippedUserIds = events
+    .filter((e) => e.event_type === "HANDOFF_SKIPPED_UNAVAILABLE" && e.from_user_id)
+    .map((e) => e.from_user_id as number);
+
   return findNextFreePlayerWithData(activePlayers, chains, skippedUserIds, options);
 }
 

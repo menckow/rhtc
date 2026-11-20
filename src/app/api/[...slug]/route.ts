@@ -4,6 +4,7 @@ import {
   createSessionToken,
   getSessionUserFromHeader,
   hashPassword,
+  invalidateUserSessionCache,
   makeClearCookieHeader,
   makeSessionCookieHeader,
   verifyPassword,
@@ -11,6 +12,7 @@ import {
 import {
   buildGroupChatMessage,
   findNextFreePlayerAsync,
+  findNextFreePlayerWithData,
   getFullName,
   getNextSeasonRefCodeAsync,
   getSortedActivePlayersAsync,
@@ -55,13 +57,16 @@ export async function GET(
 
   // 2. /api/dashboard
   if (path === "/dashboard") {
-    const allSeasons = await repo.seasons.listAll();
+    const [allSeasons, allUsersRaw] = await Promise.all([
+      repo.seasons.listAll(),
+      repo.users.listAll(),
+    ]);
     const reqSeasonId = url.searchParams.get("seasonId")
       ? Number(url.searchParams.get("seasonId"))
       : null;
     const season =
       (reqSeasonId ? allSeasons.find((s) => s.id === reqSeasonId) : undefined) ??
-      (await repo.seasons.getActive()) ??
+      allSeasons.find((s) => s.is_active) ??
       allSeasons[0] ??
       null;
 
@@ -82,19 +87,22 @@ export async function GET(
       });
     }
 
-    const allUsersRaw = await repo.users.listAll();
     const userMap = new Map<number, SafeUser>(
       allUsersRaw.map(({ password_hash: _, ...u }) => [u.id, u])
     );
-    const sortedActive = await getSortedActivePlayersAsync();
+    const sortedActive = sortPlayersList(
+      allUsersRaw.filter((u) => u.is_active_in_list)
+    );
     const inactiveUsers = sortPlayersList(
       allUsersRaw.filter((u) => !u.is_active_in_list)
     );
 
     const seasonGames = await repo.games.listBySeason(season.id);
     const gameIds = seasonGames.map((g) => g.id);
-    const chains = await repo.chains.listByGameIds(gameIds);
-    const events = await repo.events.listByGameIds(gameIds);
+    const [chains, events] = await Promise.all([
+      repo.chains.listByGameIds(gameIds),
+      repo.events.listByGameIds(gameIds),
+    ]);
 
     const isTreasurer = user.role === "KASSENWART";
     const sanitizedEvents = events.map((ev) => ({
@@ -230,6 +238,7 @@ export async function POST(
 
   // 2. /api/auth/logout
   if (path === "/auth/logout") {
+    invalidateUserSessionCache();
     const res = NextResponse.json({ ok: true });
     res.cookies.delete("rhtc_session");
     res.cookies.set({
@@ -349,6 +358,9 @@ export async function POST(
       "ADMIN",
     ];
 
+    const allExisting = await repo.users.listAll();
+    const existingEmails = new Set(allExisting.map((u) => u.email.toLowerCase()));
+
     let createdCount = 0;
     let skippedCount = 0;
     const errors: string[] = [];
@@ -369,8 +381,7 @@ export async function POST(
         errors.push(`Zeile ${i + 1}: Vorname, Nachname oder gültige E-Mail fehlt.`);
         continue;
       }
-      const existing = await repo.users.findByEmail(email);
-      if (existing) {
+      if (existingEmails.has(email)) {
         skippedCount++;
         errors.push(`Zeile ${i + 1} (${email}): E-Mail existiert bereits.`);
         continue;
@@ -386,6 +397,7 @@ export async function POST(
         is_active_in_list: 1,
         is_volunteer_exempt: isExempt,
       });
+      existingEmails.add(email);
       createdCount++;
     }
 
@@ -401,7 +413,7 @@ export async function POST(
     const reqSeasonId = body.seasonId ? Number(body.seasonId) : null;
     const season =
       (reqSeasonId ? allSeasons.find((s) => s.id === reqSeasonId) : undefined) ??
-      (await repo.seasons.getActive()) ??
+      allSeasons.find((s) => s.is_active) ??
       allSeasons[0];
 
     if (!season) {
@@ -452,6 +464,23 @@ export async function POST(
         new Date(a.kickoffAt).getTime() - new Date(b.kickoffAt).getTime()
     );
 
+    // Initialisiere Scheduler-Daten einmalig im Speicher für maximale Geschwindigkeit
+    const [activePlayers, inMemoryChains] = await Promise.all([
+      getSortedActivePlayersAsync(),
+      repo.chains.listByGameIds(existingGames.map((g) => g.id)),
+    ]);
+
+    let maxRefNum = 0;
+    for (const c of inMemoryChains) {
+      if (c.ref_code) {
+        const m = c.ref_code.match(/^SR-(\d+)$/);
+        if (m) {
+          const n = Number(m[1]);
+          if (n > maxRefNum) maxRefNum = n;
+        }
+      }
+    }
+
     let createdCount = 0;
 
     for (let idx = 0; idx < validRows.length; idx++) {
@@ -468,9 +497,8 @@ export async function POST(
       let ref1Id: number | null = null;
       let ref2Id: number | null = null;
       if (isFirst && randomFirstGame) {
-        const active = await getSortedActivePlayersAsync();
-        if (active.length >= 2) {
-          const shuffled = [...active].sort(() => Math.random() - 0.5);
+        if (activePlayers.length >= 2) {
+          const shuffled = [...activePlayers].sort(() => Math.random() - 0.5);
           ref1Id = shuffled[0].id;
           ref2Id = shuffled[1].id;
         }
@@ -484,14 +512,15 @@ export async function POST(
           : "Saison-Ansetzung alphabetisch (CSV-Import § 3 Abs. 4)";
 
         if (!chosenId) {
-          const next = await findNextFreePlayerAsync(season.id, {
+          const next = findNextFreePlayerWithData(activePlayers, inMemoryChains, [], {
             gameIdToAvoidSameGameDouble: game.id,
           });
           chosenId = next.player ? next.player.id : null;
           roundNumber = next.roundNumber;
         }
 
-        const refCode = await getNextSeasonRefCodeAsync(season.id);
+        maxRefNum++;
+        const refCode = `SR-${String(maxRefNum).padStart(3, "0")}`;
         const chain = await repo.chains.create({
           game_id: game.id,
           slot_number: slot,
@@ -500,6 +529,7 @@ export async function POST(
           status: chosenId ? "ASSIGNED" : "UNASSIGNED",
           current_assignee_id: chosenId,
         });
+        inMemoryChains.push(chain);
 
         if (chosenId) {
           await repo.events.create({
@@ -1079,6 +1109,7 @@ export async function PATCH(
       mobile_number: mobileNumber,
       password_hash: newPasswordHash,
     });
+    invalidateUserSessionCache(user.id);
     return NextResponse.json({ ok: true });
   }
 
@@ -1112,6 +1143,7 @@ export async function PATCH(
     if (body.mobile_number !== undefined) updates.mobile_number = String(body.mobile_number).trim() || null;
 
     await repo.users.update(targetId, updates);
+    invalidateUserSessionCache(targetId);
     return NextResponse.json({ ok: true });
   }
 

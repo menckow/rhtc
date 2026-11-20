@@ -91,21 +91,24 @@ async function api(url, options = {}) {
 
 async function loadDashboard() {
   try {
-    const me = await api("/api/auth/me");
-    state.user = me.user;
-    if (state.user) {
-      const qs = state.selectedSeasonId
-        ? `?seasonId=${state.selectedSeasonId}`
-        : "";
-      state.data = await api(`/api/dashboard${qs}`);
-      if (state.data?.season) {
-        state.selectedSeasonId = state.data.season.id;
-      }
-    } else {
-      state.data = null;
+    const qs = state.selectedSeasonId
+      ? `?seasonId=${state.selectedSeasonId}`
+      : "";
+    const data = await api(`/api/dashboard${qs}`);
+    state.user = data.user;
+    state.data = data;
+    if (state.data?.season) {
+      state.selectedSeasonId = state.data.season.id;
     }
+    state.error = null;
   } catch (e) {
-    state.error = e.message;
+    if (e.message && (e.message.includes("Nicht angemeldet") || e.message.includes("401"))) {
+      state.user = null;
+      state.data = null;
+      state.error = null;
+    } else {
+      state.error = e.message;
+    }
   }
   render();
 }
