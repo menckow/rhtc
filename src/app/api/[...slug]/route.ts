@@ -696,50 +696,69 @@ export async function POST(
     if (!chain) {
       return NextResponse.json({ error: "Slot nicht gefunden." }, { status: 404 });
     }
-    const isPending = chain.pending_assignee_id === user.id;
-    const isAdmin = user.role === "SCHIEDSRICHTERWART" || user.role === "ADMIN";
-    if (!isPending && !isAdmin) {
-      return NextResponse.json({ error: "Keine Berechtigung." }, { status: 403 });
+    if (chain.status !== "PENDING_HANDOFF" && chain.status !== "ASSIGNED") {
+      return NextResponse.json(
+        { error: "Keine unbestätigte Ansetzung oder Weitergabe vorhanden." },
+        { status: 400 }
+      );
     }
+
+    const targetUserId =
+      chain.status === "PENDING_HANDOFF"
+        ? chain.pending_assignee_id
+        : chain.current_assignee_id;
+
+    const isAuthorized =
+      targetUserId === user.id ||
+      user.role === "SCHIEDSRICHTERWART" ||
+      user.role === "ADMIN";
+
+    if (!isAuthorized) {
+      return NextResponse.json(
+        { error: "Nur die zugewiesene Person oder der Schiedsrichterwart darf annehmen." },
+        { status: 403 }
+      );
+    }
+
     const action = String(body.action || "").toUpperCase();
     const game = (await repo.games.findById(chain.game_id))!;
-    const respondingUserId = chain.pending_assignee_id || user.id;
+    const acceptedUserId = targetUserId || user.id;
+    const acceptedUser = (await repo.users.findById(acceptedUserId)) || user;
 
     if (action === "ACCEPT") {
       await repo.chains.update(chainId, {
-        current_assignee_id: respondingUserId,
+        current_assignee_id: acceptedUser.id,
         pending_assignee_id: null,
-        status: "ASSIGNED",
+        status: "CONFIRMED",
       });
       await repo.events.create({
         chain_id: chainId,
         game_id: game.id,
         event_type: "HANDOFF_ACCEPTED",
         from_user_id: chain.current_assignee_id,
-        to_user_id: respondingUserId,
-        public_note: "Weitergabe akzeptiert.",
+        to_user_id: acceptedUser.id,
+        public_note: "Ansetzung angenommen und bestätigt",
       });
-      const toUser = await repo.users.findById(respondingUserId);
       const chatMessage = buildGroupChatMessage({
         type: "HANDOFF_ACCEPTED",
         gameTitle: game.title,
         kickoffAt: game.kickoff_at,
         slotNumber: chain.slot_number,
         refCode: chain.ref_code,
-        toName: getFullName(toUser),
+        toName: getFullName(acceptedUser),
       });
-      return NextResponse.json({ ok: true, status: "ASSIGNED", chatMessage });
+      return NextResponse.json({ ok: true, status: "CONFIRMED", chatMessage });
     } else if (action === "DECLINE") {
       await repo.events.create({
         chain_id: chainId,
         game_id: game.id,
         event_type: "HANDOFF_SKIPPED_UNAVAILABLE",
-        from_user_id: respondingUserId,
+        from_user_id: acceptedUserId,
         to_user_id: null,
         public_note: body.reason ? String(body.reason).trim() : "Verhindert.",
       });
       const { player: nextPlayer } = await findNextFreePlayerAsync(game.season_id, {
-        excludeUserIds: [chain.current_assignee_id!, respondingUserId],
+        excludeUserIds: [chain.current_assignee_id!, acceptedUserId],
         gameIdToAvoidSameGameDouble: game.id,
       });
       if (nextPlayer) {
@@ -753,14 +772,13 @@ export async function POST(
           status: "ASSIGNED",
         });
       }
-      const skippedUser = await repo.users.findById(respondingUserId);
       const chatMessage = buildGroupChatMessage({
         type: "HANDOFF_SKIPPED",
         gameTitle: game.title,
         kickoffAt: game.kickoff_at,
         slotNumber: chain.slot_number,
         refCode: chain.ref_code,
-        fromName: getFullName(skippedUser),
+        fromName: getFullName(acceptedUser),
         toName: nextPlayer ? getFullName(nextPlayer) : "offen (keine freie Person)",
       });
       return NextResponse.json({ ok: true, nextPlayer, chatMessage });
