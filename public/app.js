@@ -98,7 +98,7 @@ async function loadDashboard() {
         ? `?seasonId=${state.selectedSeasonId}`
         : "";
       state.data = await api(`/api/dashboard${qs}`);
-      if (state.data.season) {
+      if (state.data?.season) {
         state.selectedSeasonId = state.data.season.id;
       }
     } else {
@@ -136,15 +136,16 @@ function openAddGameModal() {
 }
 
 function openEditGameModal(gameId) {
-  const game = state.data.games.find((g) => g.id === gameId);
+  const game = state.data?.games?.find((g) => g.id === gameId);
   if (!game) return;
   state.modal = { type: "editGame", game };
   render();
 }
 
 function openManualAssignModal(chainId) {
+  if (!state.data?.games) return;
   for (const g of state.data.games) {
-    const ch = g.chains.find((c) => c.id === chainId);
+    const ch = g.chains?.find((c) => c.id === chainId);
     if (ch) {
       state.modal = { type: "manualAssign", chain: ch, game: g };
       render();
@@ -174,8 +175,15 @@ function openAddSeasonModal() {
 }
 
 function openEditSeasonModal() {
-  if (!state.data.season) return;
-  state.modal = { type: "editSeason", season: state.data.season };
+  const currentSeason =
+    state.data?.season ||
+    state.data?.seasons?.find((s) => s.id === state.selectedSeasonId) ||
+    state.data?.seasons?.[0];
+  if (!currentSeason) {
+    alert("Keine Saison zum Bearbeiten vorhanden.");
+    return;
+  }
+  state.modal = { type: "editSeason", season: currentSeason };
   render();
 }
 
@@ -185,7 +193,7 @@ function openProfileModal() {
 }
 
 function openEditPlayerModal(playerId) {
-  const player = state.data.players.find((p) => p.id === playerId);
+  const player = state.data?.players?.find((p) => p.id === playerId);
   if (!player) return;
   state.modal = { type: "editPlayer", player };
   render();
@@ -1776,11 +1784,15 @@ function render() {
   const showAdminTabs = canViewAdminTabs(state.user);
   const isWartOrAdmin =
     state.user.role === "SCHIEDSRICHTERWART" || state.user.role === "ADMIN";
-  const seasonsList = state.data.seasons || (state.data.season ? [state.data.season] : []);
+  const currentSeason =
+    state.data?.season ||
+    (state.data?.seasons ? state.data.seasons.find((s) => s.id === state.selectedSeasonId) : null) ||
+    state.data?.seasons?.[0];
+  const seasonsList = state.data?.seasons || (currentSeason ? [currentSeason] : []);
   const seasonOpts = seasonsList
     .map(
       (s) =>
-        `<option value="${s.id}" ${s.id === state.data.season?.id ? "selected" : ""}>${esc(s.name)}${s.is_active ? " (Aktiv)" : ""}</option>`
+        `<option value="${s.id}" ${s.id === currentSeason?.id ? "selected" : ""}>${esc(s.name)}${s.is_active ? " (Aktiv)" : ""}</option>`
     )
     .join("");
   if (!showAdminTabs && !["games", "calendar", "tasks"].includes(state.tab)) {
@@ -1802,7 +1814,7 @@ function render() {
         <div class="brand-crest">${RHTC_CREST_SVG}</div>
         <div>
           <h1>RHTC II – Schiedsrichterverwaltung</h1>
-          <span>${esc(state.data.season?.name || "Saison")} &bull; Schwarz-Gold</span>
+          <span>${esc(currentSeason?.name || "Saison")} &bull; Schwarz-Gold</span>
         </div>
       </div>
       <div class="user-bar" style="flex-wrap:wrap">
@@ -1810,8 +1822,8 @@ function render() {
           ${seasonOpts}
         </select>
         ${isWartOrAdmin ? `<button class="btn btn-outline btn-sm" onclick="openAddSeasonModal()">+ Saison</button>` : ""}
-        ${isWartOrAdmin && state.data.season ? `<button class="btn btn-outline btn-sm" onclick="openEditSeasonModal()">Umbenennen</button>` : ""}
-        ${isWartOrAdmin && state.data.season && !state.data.season.is_active ? `<button class="btn btn-warn btn-sm" onclick="activateSeason(${state.data.season.id})">Aktiv setzen</button>` : ""}
+        ${isWartOrAdmin && currentSeason ? `<button class="btn btn-outline btn-sm" onclick="openEditSeasonModal()">Umbenennen</button>` : ""}
+        ${isWartOrAdmin && currentSeason && !currentSeason.is_active ? `<button class="btn btn-warn btn-sm" onclick="activateSeason(${currentSeason.id})">Aktiv setzen</button>` : ""}
         <span><strong>${esc(fullName(state.user))}</strong> (${roleLabel(state.user.role)})</span>
         <button class="btn btn-outline btn-sm" onclick="openProfileModal()">Mein Profil</button>
         <button class="btn btn-outline btn-sm" onclick="logout()">Abmelden</button>
@@ -1847,8 +1859,10 @@ function attachModalHandlers() {
   if (hfForm) {
     hfForm.onsubmit = async (e) => {
       e.preventDefault();
+      const chainId = state.modal?.chain?.id;
+      if (!chainId) return;
       try {
-        const res = await api(`/api/chains/${state.modal.chain.id}/handoff`, {
+        const res = await api(`/api/chains/${chainId}/handoff`, {
           method: "POST",
           body: JSON.stringify({
             reasonType: document.getElementById("hf-reason").value,
@@ -1870,11 +1884,24 @@ function attachModalHandlers() {
   if (esForm) {
     esForm.onsubmit = async (e) => {
       e.preventDefault();
+      const seasonId =
+        state.modal?.season?.id ||
+        state.data?.season?.id ||
+        state.selectedSeasonId;
+      if (!seasonId) {
+        alert("Keine Saison zum Bearbeiten ausgewählt.");
+        return;
+      }
+      const newName = (document.getElementById("es-name")?.value || "").trim();
+      if (!newName) {
+        alert("Bitte einen Saisonnamen eingeben.");
+        return;
+      }
       try {
-        await api(`/api/seasons/${state.modal.season.id}`, {
+        await api(`/api/seasons/${seasonId}`, {
           method: "PATCH",
           body: JSON.stringify({
-            name: document.getElementById("es-name").value,
+            name: newName,
           }),
         });
         state.modal = null;
@@ -1890,14 +1917,23 @@ function attachModalHandlers() {
     snForm.onsubmit = async (e) => {
       e.preventDefault();
       try {
+        const nameVal = (document.getElementById("sn-name")?.value || "").trim();
+        if (!nameVal) {
+          alert("Bitte einen Namen für die neue Saison eingeben.");
+          return;
+        }
+        const setActive = !!document.getElementById("sn-active")?.checked;
         const res = await api("/api/seasons", {
           method: "POST",
           body: JSON.stringify({
-            name: document.getElementById("sn-name").value,
-            setActive: document.getElementById("sn-active").checked,
+            name: nameVal,
+            setActive,
           }),
         });
-        state.selectedSeasonId = res.id;
+        const newId = res.season?.id || res.id;
+        if (newId) {
+          state.selectedSeasonId = newId;
+        }
         state.modal = null;
         await loadDashboard();
       } catch (err) {
@@ -1936,8 +1972,10 @@ function attachModalHandlers() {
   if (egForm) {
     egForm.onsubmit = async (e) => {
       e.preventDefault();
+      const gameId = state.modal?.game?.id;
+      if (!gameId) return;
       try {
-        await api(`/api/games/${state.modal.game.id}`, {
+        await api(`/api/games/${gameId}`, {
           method: "PATCH",
           body: JSON.stringify({
             title: document.getElementById("eg-title").value,
@@ -1959,8 +1997,10 @@ function attachModalHandlers() {
   if (maForm) {
     maForm.onsubmit = async (e) => {
       e.preventDefault();
+      const chainId = state.modal?.chain?.id;
+      if (!chainId) return;
       try {
-        await api(`/api/chains/${state.modal.chain.id}/manual-assign`, {
+        await api(`/api/chains/${chainId}/manual-assign`, {
           method: "POST",
           body: JSON.stringify({
             userId: Number(document.getElementById("ma-user").value),
@@ -2003,6 +2043,8 @@ function attachModalHandlers() {
   if (epForm) {
     epForm.onsubmit = async (e) => {
       e.preventDefault();
+      const playerId = state.modal?.player?.id;
+      if (!playerId) return;
       try {
         const orderVal = document.getElementById("ep-order").value.trim();
         const passVal = document.getElementById("ep-pass").value.trim();
@@ -2543,5 +2585,19 @@ window.copyChatMsg = () => {
   navigator.clipboard.writeText(text);
   alert("Text für den Gruppenchat kopiert!");
 };
+
+window.openHandoffModal = openHandoffModal;
+window.openAddGameModal = openAddGameModal;
+window.openEditGameModal = openEditGameModal;
+window.openManualAssignModal = openManualAssignModal;
+window.openAddPlayerModal = openAddPlayerModal;
+window.openImportCsvModal = openImportCsvModal;
+window.openImportGamesCsvModal = openImportGamesCsvModal;
+window.openAddSeasonModal = openAddSeasonModal;
+window.openEditSeasonModal = openEditSeasonModal;
+window.openProfileModal = openProfileModal;
+window.openEditPlayerModal = openEditPlayerModal;
+window.openHardshipModal = openHardshipModal;
+window.closeModal = closeModal;
 
 loadDashboard();

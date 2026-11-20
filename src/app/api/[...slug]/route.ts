@@ -61,7 +61,9 @@ export async function GET(
       : null;
     const season =
       (reqSeasonId ? allSeasons.find((s) => s.id === reqSeasonId) : undefined) ??
-      (await repo.seasons.getActive());
+      (await repo.seasons.getActive()) ??
+      allSeasons[0] ??
+      null;
 
     if (!season) {
       return NextResponse.json({
@@ -256,7 +258,11 @@ export async function POST(
       return NextResponse.json({ error: "Name ist erforderlich." }, { status: 400 });
     }
     const season = await repo.seasons.create(name);
-    return NextResponse.json({ season });
+    if (body.setActive) {
+      await repo.seasons.activate(season.id);
+      season.is_active = 1;
+    }
+    return NextResponse.json({ season, id: season.id, ok: true });
   }
 
   // 4. /api/seasons/:id/activate
