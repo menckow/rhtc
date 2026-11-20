@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import type { IncomingMessage } from "node:http";
 import { sqlite, type SafeUser, type UserRow } from "../db/index.ts";
+import { repo } from "./repository.ts";
 
 const COOKIE_NAME = "rhtc_session";
 const SECRET =
@@ -80,6 +81,31 @@ export function getSessionUser(req: IncomingMessage): SafeUser | null {
   const row = sqlite
     .prepare("SELECT * FROM users WHERE id = ?")
     .get(userId) as UserRow | undefined;
+  if (!row) return null;
+
+  const { password_hash: _, ...safeUser } = row;
+  return safeUser;
+}
+
+export async function getSessionUserFromHeader(
+  cookieHeader: string | null
+): Promise<SafeUser | null> {
+  if (!cookieHeader) return null;
+  const result: Record<string, string> = {};
+  for (const part of cookieHeader.split(";")) {
+    const idx = part.indexOf("=");
+    if (idx === -1) continue;
+    const key = part.slice(0, idx).trim();
+    const val = part.slice(idx + 1).trim();
+    if (key) result[key] = decodeURIComponent(val);
+  }
+  const token = result[COOKIE_NAME];
+  if (!token) return null;
+
+  const userId = verifySessionToken(token);
+  if (!userId) return null;
+
+  const row = await repo.users.findById(userId);
   if (!row) return null;
 
   const { password_hash: _, ...safeUser } = row;

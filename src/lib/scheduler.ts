@@ -6,6 +6,7 @@ import {
   type SafeUser,
   type UserRow,
 } from "../db/index.ts";
+import { repo } from "./repository.ts";
 
 export function formatEuro(cents: number): string {
   return (cents / 100).toLocaleString("de-DE", {
@@ -34,15 +35,8 @@ export function isShortNotice48h(kickoffAt: string): boolean {
   return diffHours < 48;
 }
 
-/**
- * Liefert die aktive Schiedsrichterliste sortiert nach § 2 Abs. 2 & 4.
- */
-export function getSortedActivePlayers(): SafeUser[] {
-  const rows = sqlite
-    .prepare("SELECT * FROM users WHERE is_active_in_list = 1")
-    .all() as unknown as UserRow[];
-
-  return rows
+export function sortPlayersList(users: UserRow[]): SafeUser[] {
+  return users
     .map(({ password_hash: _, ...u }) => u)
     .sort((a, b) => {
       const ovA = a.list_order_override ?? Number.MAX_SAFE_INTEGER;
@@ -58,13 +52,25 @@ export function getSortedActivePlayers(): SafeUser[] {
     });
 }
 
+export async function getSortedActivePlayersAsync(): Promise<SafeUser[]> {
+  const users = await repo.users.listActive();
+  return sortPlayersList(users);
+}
+
 /**
- * Ermittelt gemäß § 1 Abs. 5, § 3 Abs. 4 & 7 die alphabetisch nächste freie Person:
- * Spieler, die bereits eingesetzt wurden (CONFIRMED_DEPLOYED), werden erst dann
- * wieder zugeordnet, wenn alle anderen aktiven Spieler ebenfalls eingesetzt wurden.
+ * Liefert die aktive Schiedsrichterliste sortiert nach § 2 Abs. 2 & 4.
  */
-export function findNextFreePlayer(
-  seasonId: number,
+export function getSortedActivePlayers(): SafeUser[] {
+  const rows = sqlite
+    .prepare("SELECT * FROM users WHERE is_active_in_list = 1")
+    .all() as unknown as UserRow[];
+  return sortPlayersList(rows);
+}
+
+export function findNextFreePlayerWithData(
+  allActivePlayers: SafeUser[],
+  allChains: ChainRow[],
+  skippedUserIds: number[],
   options: {
     excludeUserIds?: number[];
     gameIdToAvoidSameGameDouble?: number;
@@ -72,26 +78,11 @@ export function findNextFreePlayer(
     restrictToMinDeployed?: boolean;
   } = {}
 ): { player: SafeUser | null; roundNumber: number } {
-  const allActive = getSortedActivePlayers();
   const sortedPlayers = options.excludeVolunteerExempt
-    ? allActive.filter((p) => !p.is_volunteer_exempt)
-    : allActive;
+    ? allActivePlayers.filter((p) => !p.is_volunteer_exempt)
+    : allActivePlayers;
   if (sortedPlayers.length === 0) {
     return { player: null, roundNumber: 1 };
-  }
-
-  const seasonGames = sqlite
-    .prepare("SELECT id FROM games WHERE season_id = ?")
-    .all(seasonId) as unknown as Array<{ id: number }>;
-
-  let allChains: ChainRow[] = [];
-  if (seasonGames.length > 0) {
-    const placeholders = seasonGames.map(() => "?").join(",");
-    allChains = sqlite
-      .prepare(
-        `SELECT * FROM assignment_chains WHERE game_id IN (${placeholders})`
-      )
-      .all(...seasonGames.map((g) => g.id)) as unknown as ChainRow[];
   }
 
   const excludeSet = new Set<number>(options.excludeUserIds ?? []);
@@ -104,16 +95,8 @@ export function findNextFreePlayer(
       if (c.current_assignee_id) excludeSet.add(c.current_assignee_id);
       if (c.pending_assignee_id) excludeSet.add(c.pending_assignee_id);
     }
-
-    const skippedEvents = sqlite
-      .prepare(
-        "SELECT from_user_id FROM handoff_events WHERE game_id = ? AND event_type = 'HANDOFF_SKIPPED_UNAVAILABLE'"
-      )
-      .all(options.gameIdToAvoidSameGameDouble) as unknown as Array<{
-      from_user_id: number | null;
-    }>;
-    for (const ev of skippedEvents) {
-      if (ev.from_user_id) excludeSet.add(ev.from_user_id);
+    for (const uid of skippedUserIds) {
+      excludeSet.add(uid);
     }
   }
 
@@ -199,6 +182,91 @@ export function findNextFreePlayer(
   // 4. Fallback: Wenigste Einsätze, nicht in excludeSet
   candidate = byDeployed.find((p) => !excludeSet.has(p.id));
   return { player: candidate ?? null, roundNumber };
+}
+
+export async function findNextFreePlayerAsync(
+  seasonId: number,
+  options: {
+    excludeUserIds?: number[];
+    gameIdToAvoidSameGameDouble?: number;
+    excludeVolunteerExempt?: boolean;
+    restrictToMinDeployed?: boolean;
+  } = {}
+): Promise<{ player: SafeUser | null; roundNumber: number }> {
+  const activePlayers = await getSortedActivePlayersAsync();
+  const seasonGames = await repo.games.listBySeason(seasonId);
+  const gameIds = seasonGames.map((g) => g.id);
+  const chains = await repo.chains.listByGameIds(gameIds);
+  let skippedUserIds: number[] = [];
+  if (options.gameIdToAvoidSameGameDouble) {
+    const events = await repo.events.listByGameIds([options.gameIdToAvoidSameGameDouble]);
+    skippedUserIds = events
+      .filter((e) => e.event_type === "HANDOFF_SKIPPED_UNAVAILABLE" && e.from_user_id)
+      .map((e) => e.from_user_id as number);
+  }
+  return findNextFreePlayerWithData(activePlayers, chains, skippedUserIds, options);
+}
+
+export async function getNextSeasonRefCodeAsync(seasonId: number): Promise<string> {
+  const seasonGames = await repo.games.listBySeason(seasonId);
+  const chains = await repo.chains.listByGameIds(seasonGames.map((g) => g.id));
+  let maxNum = 0;
+  for (const c of chains) {
+    if (c.ref_code) {
+      const m = c.ref_code.match(/^SR-(\d+)$/);
+      if (m) {
+        const n = Number(m[1]);
+        if (n > maxNum) maxNum = n;
+      }
+    }
+  }
+  return `SR-${String(maxNum + 1).padStart(3, "0")}`;
+}
+
+/**
+ * Ermittelt gemäß § 1 Abs. 5, § 3 Abs. 4 & 7 die alphabetisch nächste freie Person:
+ * Spieler, die bereits eingesetzt wurden (CONFIRMED_DEPLOYED), werden erst dann
+ * wieder zugeordnet, wenn alle anderen aktiven Spieler ebenfalls eingesetzt wurden.
+ */
+export function findNextFreePlayer(
+  seasonId: number,
+  options: {
+    excludeUserIds?: number[];
+    gameIdToAvoidSameGameDouble?: number;
+    excludeVolunteerExempt?: boolean;
+    restrictToMinDeployed?: boolean;
+  } = {}
+): { player: SafeUser | null; roundNumber: number } {
+  const allActive = getSortedActivePlayers();
+  const seasonGames = sqlite
+    .prepare("SELECT id FROM games WHERE season_id = ?")
+    .all(seasonId) as unknown as Array<{ id: number }>;
+
+  let allChains: ChainRow[] = [];
+  if (seasonGames.length > 0) {
+    const placeholders = seasonGames.map(() => "?").join(",");
+    allChains = sqlite
+      .prepare(
+        `SELECT * FROM assignment_chains WHERE game_id IN (${placeholders})`
+      )
+      .all(...seasonGames.map((g) => g.id)) as unknown as ChainRow[];
+  }
+
+  let skippedUserIds: number[] = [];
+  if (options.gameIdToAvoidSameGameDouble) {
+    const skippedEvents = sqlite
+      .prepare(
+        "SELECT from_user_id FROM handoff_events WHERE game_id = ? AND event_type = 'HANDOFF_SKIPPED_UNAVAILABLE'"
+      )
+      .all(options.gameIdToAvoidSameGameDouble) as unknown as Array<{
+      from_user_id: number | null;
+    }>;
+    skippedUserIds = skippedEvents
+      .filter((e) => e.from_user_id)
+      .map((e) => e.from_user_id as number);
+  }
+
+  return findNextFreePlayerWithData(allActive, allChains, skippedUserIds, options);
 }
 
 export function getNextSeasonRefCode(seasonId: number): string {

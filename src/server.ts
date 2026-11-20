@@ -1083,7 +1083,7 @@ const server = http.createServer(async (req, res) => {
 
         const game = sqlite
           .prepare("SELECT * FROM games WHERE id = ?")
-          .get(chain.game_id) as GameRow;
+          .get(chain.game_id) as unknown as GameRow;
         const fromUser = responsibleUserId
           ? getUserById(responsibleUserId)
           : null;
@@ -1289,7 +1289,7 @@ const server = http.createServer(async (req, res) => {
 
         const game = sqlite
           .prepare("SELECT * FROM games WHERE id = ?")
-          .get(chain.game_id) as GameRow;
+          .get(chain.game_id) as unknown as GameRow;
         const acceptedUser = targetUserId ? getUserById(targetUserId) : null;
         if (!acceptedUser) {
           return sendJson(res, 400, { error: "Zugewiesene Person fehlt." });
@@ -1356,7 +1356,7 @@ const server = http.createServer(async (req, res) => {
 
         const targetGame = sqlite
           .prepare("SELECT * FROM games WHERE id = ?")
-          .get(chain.game_id) as GameRow;
+          .get(chain.game_id) as unknown as GameRow;
 
         const now = new Date().toISOString();
         sqlite
@@ -1421,7 +1421,7 @@ const server = http.createServer(async (req, res) => {
         const action = String(body.action || "");
         const targetGame = sqlite
           .prepare("SELECT * FROM games WHERE id = ?")
-          .get(chain.game_id) as GameRow;
+          .get(chain.game_id) as unknown as GameRow;
         const fromUser = responsibleUserId
           ? getUserById(responsibleUserId)
           : null;
@@ -1554,7 +1554,7 @@ const server = http.createServer(async (req, res) => {
 
         const game = sqlite
           .prepare("SELECT * FROM games WHERE id = ?")
-          .get(chain.game_id) as GameRow;
+          .get(chain.game_id) as unknown as GameRow;
         if (
           user.role !== "SCHIEDSRICHTERWART" &&
           user.role !== "ADMIN" &&
@@ -1622,7 +1622,7 @@ const server = http.createServer(async (req, res) => {
 
         const game = sqlite
           .prepare("SELECT * FROM games WHERE id = ?")
-          .get(chain.game_id) as GameRow;
+          .get(chain.game_id) as unknown as GameRow;
         if (
           user.role !== "SCHIEDSRICHTERWART" &&
           user.role !== "ADMIN" &&
