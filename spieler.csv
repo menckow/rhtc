@@ -1,21 +1,33 @@
-﻿Titel;Datum;Uhrzeit;Ort
-HTHC / 3. Herren;22.11.2026;17:15 Uhr;HTHC / 3. Herren
-HTHC / 3. Herren;22.11.2026;17:15 Uhr;HTHC / 3. Herren
-Alster / 1. Herren;5.12.2026;11:00 Uhr;Alster / 1. Herren
-Alster / 1. Herren;5.12.2026;11:00 Uhr;Alster / 1. Herren
-Altona / 3. Herren;6.12.2026;20:15 Uhr;Altona / 3. Herren
-Altona / 3. Herren;6.12.2026;20:15 Uhr;Altona / 3. Herren
-UHC / 1. Herren;11.12.2026;20:00 Uhr;UHC / 1. Herren
-UHC / 1. Herren;11.12.2026;20:00 Uhr;UHC / 1. Herren
-Polo / 1. Herren;16.1.2027;13:00 Uhr;Polo / 1. Herren
-Polo / 1. Herren;16.1.2027;13:00 Uhr;Polo / 1. Herren
-Rissen / 3. Herren;17.1.2027;19:45 Uhr;Rissen / 3. Herren
-Rissen / 3. Herren;17.1.2027;19:45 Uhr;Rissen / 3. Herren
-Bergstedt / 3. Herren;23.1.2027;20:15 Uhr;Bergstedt / 3. Herren
-Bergstedt / 3. Herren;23.1.2027;20:15 Uhr;Bergstedt / 3. Herren
-Klipper / 1. Herren;29.1.2027;20:00 Uhr;Klipper / 1. Herren
-Klipper / 1. Herren;29.1.2027;20:00 Uhr;Klipper / 1. Herren
-Heimfeld / 3. Herren;6.2.2027;19:30 Uhr;Heimfeld / 3. Herren
-Heimfeld / 3. Herren;6.2.2027;19:30 Uhr;Heimfeld / 3. Herren
-Horn Hamm / 1. Herren;21.2.2027;18:00 Uhr;Horn Hamm / 1. Herren
-Horn Hamm / 1. Herren;21.2.2027;18:00 Uhr;Horn Hamm / 1. Herren
+﻿Vorname;Nachname;email;Mobilnummer;Rolle;Ehrenamt;passwort
+Sönke;Andrees;strandkorp3443@hotmail.com;+49 173 6310153;Vorstand;Nein;rhtc_26
+Marlon;Baum;m.baum@tuta.com;;Spieler;Nein;rhtc_26
+Maximilian;Berghausen;b-maxi@gmx.net;;Spieler;Nein;rhtc_26
+Pascal;Blendermann;p_plendermann@gmx.de;;Spieler;Nein;rhtc_26
+Tim;Büsing;timbuesing@web.de;;Spieler;Nein;rhtc_26
+Leif;Dieckmann-Keden;leif_keden@gmx.de;;Spieler;Nein;rhtc_26
+Florian;Fischer;florianf20@aol.com;;Spieler;Nein;rhtc_26
+Tim;Freks;tim.frerks@t-online.de;;Spieler;Nein;rhtc_26
+Ole;Hesse;ole.hesse@gmx.de;;Spieler;Nein;rhtc_26
+Sebastian;Kunkel;;;Spieler;Nein;rhtc_26
+Johannes;Lange;jlange4077@aol.com;;Spieler;Nein;rhtc_26
+Florian;Laudon;flaudon@hotmail.com;;Spieler;Nein;rhtc_26
+Finn;Lunderup;;;Spieler;Nein;rhtc_26
+Milan;Männle;;;Spieler;Nein;rhtc_26
+Jannik;Matthiesen;;;Spieler;Nein;rhtc_26
+Owen;Menck;owen.menck@gmail.com;+49 172 1539665;Admin;Nein;rhtc_26
+Bennet;Mende;bennet@mmende.de;;Spieler;Nein;rhtc_26
+Alexander;Reek;alexander.reek@gmx.com;;Spieler;Nein;rhtc_26
+Michael;Rohdenburg;michi_lorenz@web.de;;Spieler;Nein;rhtc_26
+Johannes;Simon;johan-simon@gmx.net;;Spieler;Nein;rhtc_26
+Stefan;Schilling;;;Spieler;Nein;rhtc_26
+Nick;Schubert;;;Spieler;Nein;rhtc_26
+Johannes;Strobel;;;Spieler;Nein;rhtc_26
+Marc;Tenner;mptenner@gmail.com;;Mannschaftskassenwart;Nein;rhtc_26
+Justus;Tonner;;;Spieler;Nein;rhtc_26
+Till;Vieth;;;Spieler;Nein;rhtc_26
+Ulrich;von Holten;von.holten@hotmail.com;;Spieler;Nein;rhtc_26
+Frederic;Wieg;frederic_wieg@web.de;;Spieler;Nein;rhtc_26
+Felix;Wiegand-Dreßler;felix.w@gmx.de;;Spieler;Nein;rhtc_26
+Robert;Wittkamp;wittkamprob@aol.com;;Schiedsrichterwart;Nein;rhtc_26
+Bastian;Zeller;;;Spieler;Nein;rhtc_26
+Frank;Zeißler;;;Spieler;Nein;rhtc_26

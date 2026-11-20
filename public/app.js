@@ -2051,7 +2051,7 @@ function attachModalHandlers() {
       try {
         const orderVal = document.getElementById("ep-order").value.trim();
         const passVal = document.getElementById("ep-pass").value.trim();
-        await api(`/api/users/${state.modal.player.id}`, {
+        await api(`/api/users/${playerId}`, {
           method: "PATCH",
           body: JSON.stringify({
             firstName: document.getElementById("ep-first").value,

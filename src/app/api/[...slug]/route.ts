@@ -1131,16 +1131,76 @@ export async function PATCH(
   // 3. /api/users/:id
   const userMatch = path.match(/^\/users\/(\d+)$/);
   if (userMatch) {
-    if (user.role !== "SCHIEDSRICHTERWART" && user.role !== "ADMIN") {
+    if (user.role !== "SCHIEDSRICHTERWART" && user.role !== "ADMIN" && user.role !== "VORSTAND") {
       return NextResponse.json({ error: "Keine Berechtigung." }, { status: 403 });
     }
     const targetId = Number(userMatch[1]);
+    const existing = await repo.users.findById(targetId);
+    if (!existing) {
+      return NextResponse.json({ error: "Spieler nicht gefunden." }, { status: 404 });
+    }
+
     const updates: Record<string, any> = {};
-    if (body.role !== undefined) updates.role = String(body.role);
-    if (body.is_active_in_list !== undefined) updates.is_active_in_list = body.is_active_in_list ? 1 : 0;
-    if (body.is_volunteer_exempt !== undefined) updates.is_volunteer_exempt = body.is_volunteer_exempt ? 1 : 0;
-    if (body.list_order_override !== undefined) updates.list_order_override = body.list_order_override;
-    if (body.mobile_number !== undefined) updates.mobile_number = String(body.mobile_number).trim() || null;
+
+    const firstName = body.firstName !== undefined ? String(body.firstName).trim() : body.first_name !== undefined ? String(body.first_name).trim() : undefined;
+    if (firstName !== undefined) {
+      if (!firstName) return NextResponse.json({ error: "Vorname darf nicht leer sein." }, { status: 400 });
+      updates.first_name = firstName;
+    }
+
+    const lastName = body.lastName !== undefined ? String(body.lastName).trim() : body.last_name !== undefined ? String(body.last_name).trim() : undefined;
+    if (lastName !== undefined) {
+      if (!lastName) return NextResponse.json({ error: "Nachname darf nicht leer sein." }, { status: 400 });
+      updates.last_name = lastName;
+    }
+
+    const email = body.email !== undefined ? String(body.email).trim().toLowerCase() : undefined;
+    if (email !== undefined) {
+      if (!email || !email.includes("@")) {
+        return NextResponse.json({ error: "Bitte eine gültige E-Mail-Adresse angeben." }, { status: 400 });
+      }
+      if (email !== existing.email) {
+        const dup = await repo.users.findByEmail(email);
+        if (dup && dup.id !== targetId) {
+          return NextResponse.json({ error: "Diese E-Mail wird bereits von einem anderen Spieler verwendet." }, { status: 400 });
+        }
+      }
+      updates.email = email;
+    }
+
+    const mobile = body.mobileNumber !== undefined ? body.mobileNumber : body.mobile_number;
+    if (mobile !== undefined) {
+      updates.mobile_number = String(mobile).trim() || null;
+    }
+
+    const allowedRoles = ["PLAYER", "SCHIEDSRICHTERWART", "KASSENWART", "VORSTAND", "ADMIN"];
+    if (body.role !== undefined) {
+      const rawRole = String(body.role).trim();
+      if (allowedRoles.includes(rawRole)) {
+        updates.role = rawRole;
+      }
+    }
+
+    const activeInList = body.isActiveInList !== undefined ? body.isActiveInList : body.is_active_in_list;
+    if (activeInList !== undefined) {
+      updates.is_active_in_list = activeInList ? 1 : 0;
+    }
+
+    const volunteerExempt = body.isVolunteerExempt !== undefined ? body.isVolunteerExempt : body.is_volunteer_exempt;
+    if (volunteerExempt !== undefined) {
+      updates.is_volunteer_exempt = volunteerExempt ? 1 : 0;
+    }
+
+    const orderOverride = body.listOrderOverride !== undefined ? body.listOrderOverride : body.list_order_override;
+    if (orderOverride !== undefined) {
+      updates.list_order_override = (orderOverride === null || orderOverride === "" || Number.isNaN(Number(orderOverride)))
+        ? null
+        : Number(orderOverride);
+    }
+
+    if (body.password && String(body.password).trim().length > 0) {
+      updates.password_hash = hashPassword(String(body.password).trim());
+    }
 
     await repo.users.update(targetId, updates);
     invalidateUserSessionCache(targetId);
