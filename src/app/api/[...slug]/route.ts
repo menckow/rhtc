@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { repo } from "@/lib/repository";
 import {
+  createSessionToken,
   getSessionUserFromHeader,
   hashPassword,
   makeClearCookieHeader,
@@ -35,9 +36,10 @@ export async function GET(
   req: Request,
   { params }: { params: Promise<{ slug: string[] }> }
 ) {
-  const { slug } = await params;
-  const path = "/" + slug.join("/");
-  const url = new URL(req.url);
+  try {
+    const { slug } = await params;
+    const path = "/" + slug.join("/");
+    const url = new URL(req.url);
 
   // 1. /api/auth/me
   if (path === "/auth/me") {
@@ -180,6 +182,10 @@ export async function GET(
   }
 
   return NextResponse.json({ error: "Route nicht gefunden." }, { status: 404 });
+  } catch (err: any) {
+    console.error("DELETE error:", err);
+    return NextResponse.json({ error: err.message || "Anfrage fehlgeschlagen" }, { status: 500 });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -189,13 +195,14 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ slug: string[] }> }
 ) {
-  const { slug } = await params;
+  try {
+    const { slug } = await params;
   const path = "/" + slug.join("/");
   const body = await req.json().catch(() => ({}));
 
   // 1. /api/auth/login
   if (path === "/auth/login") {
-    const email = String(body.email || "").trim().toLowerCase();
+    const email = String(body.email || "").trim();
     const password = String(body.password || "");
     const userRow = await repo.users.findByEmail(email);
 
@@ -206,19 +213,31 @@ export async function POST(
       );
     }
     const { password_hash: _, ...safeUser } = userRow;
-    const cookieHeader = makeSessionCookieHeader(userRow.id);
-    return NextResponse.json(
-      { user: safeUser },
-      { headers: { "Set-Cookie": cookieHeader } }
-    );
+    const token = createSessionToken(userRow.id);
+    const res = NextResponse.json({ user: safeUser });
+    res.cookies.set({
+      name: "rhtc_session",
+      value: token,
+      httpOnly: true,
+      path: "/",
+      sameSite: "lax",
+      maxAge: 2592000,
+    });
+    return res;
   }
 
   // 2. /api/auth/logout
   if (path === "/auth/logout") {
-    return NextResponse.json(
-      { ok: true },
-      { headers: { "Set-Cookie": makeClearCookieHeader() } }
-    );
+    const res = NextResponse.json({ ok: true });
+    res.cookies.delete("rhtc_session");
+    res.cookies.set({
+      name: "rhtc_session",
+      value: "",
+      httpOnly: true,
+      path: "/",
+      maxAge: 0,
+    });
+    return res;
   }
 
   // Für alle nachfolgenden Routen ist Authentifizierung erforderlich
@@ -871,6 +890,10 @@ export async function POST(
   }
 
   return NextResponse.json({ error: "Route nicht gefunden." }, { status: 404 });
+  } catch (err: any) {
+    console.error("POST error:", err);
+    return NextResponse.json({ error: err.message || "Anfrage fehlgeschlagen" }, { status: 500 });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -880,7 +903,8 @@ export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ slug: string[] }> }
 ) {
-  const { slug } = await params;
+  try {
+    const { slug } = await params;
   const path = "/" + slug.join("/");
   const user = await getAuthUser(req);
   if (!user) {
@@ -970,6 +994,10 @@ export async function PATCH(
   }
 
   return NextResponse.json({ error: "Route nicht gefunden." }, { status: 404 });
+  } catch (err: any) {
+    console.error("PATCH error:", err);
+    return NextResponse.json({ error: err.message || "Anfrage fehlgeschlagen" }, { status: 500 });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -979,7 +1007,8 @@ export async function DELETE(
   req: Request,
   { params }: { params: Promise<{ slug: string[] }> }
 ) {
-  const { slug } = await params;
+  try {
+    const { slug } = await params;
   const path = "/" + slug.join("/");
   const user = await getAuthUser(req);
   if (!user) {
@@ -997,4 +1026,8 @@ export async function DELETE(
   }
 
   return NextResponse.json({ error: "Route nicht gefunden." }, { status: 404 });
+  } catch (err: any) {
+    console.error("DELETE error:", err);
+    return NextResponse.json({ error: err.message || "Anfrage fehlgeschlagen" }, { status: 500 });
+  }
 }

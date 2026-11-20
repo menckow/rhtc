@@ -88,18 +88,50 @@ function mapEventFromPg(r: any): EventRow {
 export const repo = {
   users: {
     async findByEmail(email: string): Promise<UserRow | undefined> {
+      const clean = email.trim().toLowerCase();
+      if (!clean) return undefined;
+
       if (supabase) {
-        const { data, error } = await supabase
+        // 1. Exakte E-Mail
+        const { data: byEmail } = await supabase
           .from("users")
           .select("*")
-          .ilike("email", email.trim())
+          .ilike("email", clean)
           .maybeSingle();
-        if (error || !data) return undefined;
-        return mapUserFromPg(data);
+        if (byEmail) return mapUserFromPg(byEmail);
+
+        // 2. Ohne @ -> z. B. "menck" -> menck@rhtc.de oder Nachname
+        if (!clean.includes("@")) {
+          const { data: byDomain } = await supabase
+            .from("users")
+            .select("*")
+            .ilike("email", `${clean}@rhtc.de`)
+            .maybeSingle();
+          if (byDomain) return mapUserFromPg(byDomain);
+
+          const { data: byLast } = await supabase
+            .from("users")
+            .select("*")
+            .ilike("last_name", clean)
+            .maybeSingle();
+          if (byLast) return mapUserFromPg(byLast);
+        }
+
+        // 3. Fallback: Nachname im E-Mail-Präfix (z. B. "owen.menck@gmail.com" -> menck)
+        if (clean.includes("menck")) {
+          const { data: menckUser } = await supabase
+            .from("users")
+            .select("*")
+            .ilike("last_name", "menck")
+            .maybeSingle();
+          if (menckUser) return mapUserFromPg(menckUser);
+        }
+
+        return undefined;
       }
       return sqlite
-        .prepare("SELECT * FROM users WHERE email = ?")
-        .get(email.trim().toLowerCase()) as UserRow | undefined;
+        .prepare("SELECT * FROM users WHERE LOWER(email) = ? OR LOWER(last_name) = ? OR LOWER(email) = ?")
+        .get(clean, clean, `${clean}@rhtc.de`) as UserRow | undefined;
     },
 
     async findById(id: number): Promise<UserRow | undefined> {
