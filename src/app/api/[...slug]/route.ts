@@ -336,51 +336,185 @@ export async function POST(
     if (user.role !== "SCHIEDSRICHTERWART" && user.role !== "ADMIN") {
       return NextResponse.json({ error: "Keine Berechtigung." }, { status: 403 });
     }
-    const csvContent = String(body.csv || "");
-    const rows = parseCsv(csvContent);
-    if (rows.length < 2) {
-      return NextResponse.json({ error: "CSV enthält keine Datenzeilen." }, { status: 400 });
+    const rawRows = Array.isArray(body.rows) ? body.rows : [];
+    if (rawRows.length === 0) {
+      return NextResponse.json({ error: "Keine Import-Zeilen übergeben." }, { status: 400 });
     }
-    const header = rows[0].map((h) => h.toLowerCase());
-    const firstIdx = header.findIndex((h) => h.includes("vorname") || h === "first");
-    const lastIdx = header.findIndex((h) => h.includes("nachname") || h.includes("name") || h === "last");
-    const emailIdx = header.findIndex((h) => h.includes("mail") || h.includes("e-mail"));
-    const mobileIdx = header.findIndex((h) => h.includes("mobil") || h.includes("telefon") || h.includes("phone"));
 
-    let imported = 0;
-    const defaultPassword = hashPassword("rhtc2026");
-    for (let i = 1; i < rows.length; i++) {
-      const r = rows[i];
-      let first = firstIdx >= 0 ? r[firstIdx] : "";
-      let last = lastIdx >= 0 ? r[lastIdx] : "";
-      if (!first && last && last.includes(",")) {
-        const parts = last.split(",").map((p) => p.trim());
-        last = parts[0];
-        first = parts[1] || "";
+    const allowedRoles = [
+      "PLAYER",
+      "SCHIEDSRICHTERWART",
+      "KASSENWART",
+      "VORSTAND",
+      "ADMIN",
+    ];
+
+    let createdCount = 0;
+    let skippedCount = 0;
+    const errors: string[] = [];
+
+    for (let i = 0; i < rawRows.length; i++) {
+      const r = rawRows[i] as Record<string, unknown>;
+      const firstName = String(r.firstName || "").trim();
+      const lastName = String(r.lastName || "").trim();
+      const email = String(r.email || "").trim().toLowerCase();
+      const mobileNumber = String(r.mobileNumber || "").trim() || null;
+      const password = String(r.password || "rhtc2026").trim() || "rhtc2026";
+      const rawRole = String(r.role || "PLAYER").trim().toUpperCase();
+      const role = allowedRoles.includes(rawRole) ? rawRole : "PLAYER";
+      const isExempt = r.isVolunteerExempt ? 1 : 0;
+
+      if (!firstName || !lastName || !email || !email.includes("@")) {
+        skippedCount++;
+        errors.push(`Zeile ${i + 1}: Vorname, Nachname oder gültige E-Mail fehlt.`);
+        continue;
       }
-      if (!first || !last) continue;
-      const cleanLast = last.toLowerCase().replace(/[^a-z0-9]/g, "");
-      const cleanFirst = first.toLowerCase().replace(/[^a-z0-9]/g, "");
-      const generatedMail = `${cleanLast}.${cleanFirst}@rhtc.de`;
-      const email = emailIdx >= 0 && r[emailIdx] ? r[emailIdx].toLowerCase() : generatedMail;
-      const mobile = mobileIdx >= 0 && r[mobileIdx] ? r[mobileIdx].trim() : null;
+      const existing = await repo.users.findByEmail(email);
+      if (existing) {
+        skippedCount++;
+        errors.push(`Zeile ${i + 1} (${email}): E-Mail existiert bereits.`);
+        continue;
+      }
 
-      const dup = await repo.users.findByEmail(email);
-      if (!dup) {
-        await repo.users.create({
-          first_name: first,
-          last_name: last,
-          email,
-          mobile_number: mobile,
-          password_hash: defaultPassword,
-          role: "PLAYER",
-          is_active_in_list: 1,
-          is_volunteer_exempt: 0,
+      await repo.users.create({
+        first_name: firstName,
+        last_name: lastName,
+        email,
+        mobile_number: mobileNumber,
+        password_hash: hashPassword(password),
+        role,
+        is_active_in_list: 1,
+        is_volunteer_exempt: isExempt,
+      });
+      createdCount++;
+    }
+
+    return NextResponse.json({ ok: true, createdCount, skippedCount, errors });
+  }
+
+  // 7b. /api/games/import
+  if (path === "/games/import") {
+    if (user.role !== "SCHIEDSRICHTERWART" && user.role !== "ADMIN") {
+      return NextResponse.json({ error: "Keine Berechtigung." }, { status: 403 });
+    }
+    const allSeasons = await repo.seasons.listAll();
+    const reqSeasonId = body.seasonId ? Number(body.seasonId) : null;
+    const season =
+      (reqSeasonId ? allSeasons.find((s) => s.id === reqSeasonId) : undefined) ??
+      (await repo.seasons.getActive()) ??
+      allSeasons[0];
+
+    if (!season) {
+      return NextResponse.json({ error: "Keine gültige Saison gefunden." }, { status: 400 });
+    }
+
+    const rawRows = Array.isArray(body.rows) ? body.rows : [];
+    if (rawRows.length === 0) {
+      return NextResponse.json({ error: "Keine Spiel-Zeilen übergeben." }, { status: 400 });
+    }
+
+    const randomFirstGame = Boolean(body.randomFirstGame);
+    const existingGames = await repo.games.listBySeason(season.id);
+    const existingGamesCount = existingGames.length;
+
+    const validRows: Array<{ title: string; kickoffAt: string; location: string }> = [];
+    const seenKeys = new Set<string>();
+    for (const eg of existingGames) {
+      seenKeys.add(`${eg.title.toLowerCase()}|${eg.kickoff_at}`);
+    }
+    const errors: string[] = [];
+    let skippedCount = 0;
+
+    for (let i = 0; i < rawRows.length; i++) {
+      const r = rawRows[i] as Record<string, unknown>;
+      const title = String(r.title || "").trim();
+      const kickoffRaw = String(r.kickoffAt || "").trim();
+      const location = String(r.location || "RHTC Halle").trim() || "RHTC Halle";
+      const dt = new Date(kickoffRaw);
+      if (!title || !kickoffRaw || Number.isNaN(dt.getTime())) {
+        skippedCount++;
+        errors.push(`Zeile ${i + 1}: Ungültiger Titel oder ungültiges Datum/Uhrzeit.`);
+        continue;
+      }
+      const kickoffAt = dt.toISOString();
+      const key = `${title.toLowerCase()}|${kickoffAt}`;
+      if (seenKeys.has(key)) {
+        skippedCount++;
+        continue;
+      }
+      seenKeys.add(key);
+      validRows.push({ title, kickoffAt, location });
+    }
+
+    // Chronologisch sortieren für korrekte alphabetische Reihenfolge (§ 3 Abs. 4)
+    validRows.sort(
+      (a, b) =>
+        new Date(a.kickoffAt).getTime() - new Date(b.kickoffAt).getTime()
+    );
+
+    let createdCount = 0;
+
+    for (let idx = 0; idx < validRows.length; idx++) {
+      const item = validRows[idx];
+      const isFirst = existingGamesCount === 0 && idx === 0;
+      const game = await repo.games.create({
+        season_id: season.id,
+        title: item.title,
+        location: item.location,
+        kickoff_at: item.kickoffAt,
+        is_first_game_of_season: isFirst ? 1 : 0,
+      });
+
+      let ref1Id: number | null = null;
+      let ref2Id: number | null = null;
+      if (isFirst && randomFirstGame) {
+        const active = await getSortedActivePlayersAsync();
+        if (active.length >= 2) {
+          const shuffled = [...active].sort(() => Math.random() - 0.5);
+          ref1Id = shuffled[0].id;
+          ref2Id = shuffled[1].id;
+        }
+      }
+
+      for (const slot of [1, 2]) {
+        let chosenId: number | null = slot === 1 ? ref1Id : ref2Id;
+        let roundNumber = 1;
+        const note = isFirst
+          ? "Erste Ansetzung der Saison (CSV-Import / Losverfahren § 3 Abs. 3)"
+          : "Saison-Ansetzung alphabetisch (CSV-Import § 3 Abs. 4)";
+
+        if (!chosenId) {
+          const next = await findNextFreePlayerAsync(season.id, {
+            gameIdToAvoidSameGameDouble: game.id,
+          });
+          chosenId = next.player ? next.player.id : null;
+          roundNumber = next.roundNumber;
+        }
+
+        const refCode = await getNextSeasonRefCodeAsync(season.id);
+        const chain = await repo.chains.create({
+          game_id: game.id,
+          slot_number: slot,
+          ref_code: refCode,
+          round_number: roundNumber,
+          status: chosenId ? "ASSIGNED" : "UNASSIGNED",
+          current_assignee_id: chosenId,
         });
-        imported++;
+
+        if (chosenId) {
+          await repo.events.create({
+            chain_id: chain.id,
+            game_id: game.id,
+            event_type: "INITIAL_ASSIGNMENT",
+            to_user_id: chosenId,
+            public_note: note,
+          });
+        }
       }
+      createdCount++;
     }
-    return NextResponse.json({ ok: true, imported });
+
+    return NextResponse.json({ ok: true, createdCount, skippedCount, errors });
   }
 
   // 8. /api/games

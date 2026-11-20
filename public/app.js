@@ -2273,10 +2273,14 @@ window.handleGamesCsvFile = (input) => {
 window.submitGamesCsvImport = async () => {
   try {
     const randomEl = document.getElementById("ig-random");
+    const seasonId =
+      state.data?.season?.id ||
+      state.selectedSeasonId ||
+      state.data?.seasons?.[0]?.id;
     const res = await api("/api/games/import", {
       method: "POST",
       body: JSON.stringify({
-        seasonId: state.data.season?.id,
+        seasonId,
         randomFirstGame: randomEl ? randomEl.checked : false,
         rows: state.modal.parsedRows,
       }),
