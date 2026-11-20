@@ -1265,6 +1265,18 @@ export async function DELETE(
     return NextResponse.json({ error: "Nicht angemeldet." }, { status: 401 });
   }
 
+  // 1. /api/seasons/:id
+  const seasonMatch = path.match(/^\/seasons\/(\d+)$/);
+  if (seasonMatch) {
+    if (user.role !== "SCHIEDSRICHTERWART" && user.role !== "ADMIN") {
+      return NextResponse.json({ error: "Keine Berechtigung." }, { status: 403 });
+    }
+    const seasonId = Number(seasonMatch[1]);
+    await repo.seasons.delete(seasonId);
+    return NextResponse.json({ ok: true });
+  }
+
+  // 2. /api/games/:id
   const gameMatch = path.match(/^\/games\/(\d+)$/);
   if (gameMatch) {
     if (user.role !== "SCHIEDSRICHTERWART" && user.role !== "ADMIN") {

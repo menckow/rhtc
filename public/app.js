@@ -1497,6 +1497,7 @@ function renderModal() {
             </div>
             <div class="btn-row">
               <button type="submit" class="btn btn-primary">Speichern</button>
+              ${(state.data?.seasons?.length || 0) > 1 ? `<button type="button" class="btn btn-danger" onclick="closeModal();deleteSeason(${s.id}, '${esc(s.name)}')">Saison löschen</button>` : ""}
               <button type="button" class="btn btn-outline" onclick="closeModal()">Abbrechen</button>
             </div>
           </form>
@@ -1826,6 +1827,7 @@ function render() {
         </select>
         ${isWartOrAdmin ? `<button class="btn btn-outline btn-sm" onclick="openAddSeasonModal()">+ Saison</button>` : ""}
         ${isWartOrAdmin && currentSeason ? `<button class="btn btn-outline btn-sm" onclick="openEditSeasonModal()">Umbenennen</button>` : ""}
+        ${isWartOrAdmin && currentSeason && seasonsList.length > 1 ? `<button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:rgba(239,68,68,0.5)" onclick="deleteSeason(${currentSeason.id}, '${esc(currentSeason.name)}')">Löschen</button>` : ""}
         ${isWartOrAdmin && currentSeason && !currentSeason.is_active ? `<button class="btn btn-warn btn-sm" onclick="activateSeason(${currentSeason.id})">Aktiv setzen</button>` : ""}
         <span><strong>${esc(fullName(state.user))}</strong> (${roleLabel(state.user.role)})</span>
         <button class="btn btn-outline btn-sm" onclick="openProfileModal()">Mein Profil</button>
@@ -2137,6 +2139,23 @@ window.changeSeason = async (seasonId) => {
 window.activateSeason = async (seasonId) => {
   try {
     await api(`/api/seasons/${seasonId}/activate`, { method: "POST" });
+    await loadDashboard();
+  } catch (err) {
+    alert(err.message);
+  }
+};
+
+window.deleteSeason = async (seasonId, seasonName) => {
+  if (
+    !confirm(
+      `Saison "${seasonName}" inklusive aller zugehörigen Spiele und Ansetzungen wirklich unwiderruflich löschen?`
+    )
+  ) {
+    return;
+  }
+  try {
+    await api(`/api/seasons/${seasonId}`, { method: "DELETE" });
+    state.selectedSeasonId = null;
     await loadDashboard();
   } catch (err) {
     alert(err.message);

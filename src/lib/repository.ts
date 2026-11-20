@@ -346,6 +346,47 @@ export const repo = {
       }
       sqlite.prepare("UPDATE seasons SET name = ? WHERE id = ?").run(name, id);
     },
+
+    async delete(id: number): Promise<void> {
+      if (supabase) {
+        const { data: seasonGames } = await supabase
+          .from("games")
+          .select("id")
+          .eq("season_id", id);
+        const gameIds = (seasonGames || []).map((g) => g.id);
+
+        if (gameIds.length > 0) {
+          await supabase.from("handoff_events").delete().in("game_id", gameIds);
+          await supabase.from("assignment_chains").delete().in("game_id", gameIds);
+          await supabase.from("games").delete().eq("season_id", id);
+        }
+        const { error } = await supabase.from("seasons").delete().eq("id", id);
+        if (error) throw new Error(error.message);
+
+        const remaining = await repo.seasons.listAll();
+        if (remaining.length > 0 && !remaining.some((s) => s.is_active)) {
+          await repo.seasons.activate(remaining[0].id);
+        }
+        return;
+      }
+
+      const games = sqlite
+        .prepare("SELECT id FROM games WHERE season_id = ?")
+        .all(id) as Array<{ id: number }>;
+      for (const g of games) {
+        sqlite.prepare("DELETE FROM handoff_events WHERE game_id = ?").run(g.id);
+        sqlite.prepare("DELETE FROM assignment_chains WHERE game_id = ?").run(g.id);
+      }
+      sqlite.prepare("DELETE FROM games WHERE season_id = ?").run(id);
+      sqlite.prepare("DELETE FROM seasons WHERE id = ?").run(id);
+
+      const remaining = sqlite
+        .prepare("SELECT * FROM seasons ORDER BY id DESC")
+        .all() as unknown as SeasonRow[];
+      if (remaining.length > 0 && !remaining.some((s) => s.is_active)) {
+        await repo.seasons.activate(remaining[0].id);
+      }
+    },
   },
 
   games: {
