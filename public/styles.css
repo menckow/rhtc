@@ -879,32 +879,119 @@ th { font-size: 0.76rem; color: var(--muted); text-transform: uppercase; letter-
 }
 
 /* ==========================================================================
-   Hamburger Menu & Mobile Slide-Over Drawer
+   Unified Hamburger Menu & Slide-Over Drawer (PC & Mobile)
    ========================================================================== */
 
 /* Hamburger Button in Header */
 .hamburger-btn {
-  display: none;
-  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(212, 160, 23, 0.45);
   color: #ffffff;
   border-radius: 8px;
-  width: 42px;
-  height: 42px;
-  align-items: center;
-  justify-content: center;
+  height: 40px;
+  padding: 0 14px;
   cursor: pointer;
   flex-shrink: 0;
   transition: all 0.15s ease;
-  padding: 0;
+  font-size: 0.9rem;
+  font-weight: 700;
 }
 .hamburger-btn:hover {
-  background: rgba(212, 160, 23, 0.15);
+  background: rgba(212, 160, 23, 0.18);
   border-color: var(--gold);
+  color: var(--gold);
 }
 .hamburger-btn svg {
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
+  display: block;
+}
+.hamburger-label {
+  display: inline;
+}
+
+/* Header Right Container */
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+/* Header Current View Badge */
+.header-current-view {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 7px 14px;
+  font-size: 0.86rem;
+  color: #e5e5e5;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.header-current-view:hover {
+  background: rgba(212, 160, 23, 0.14);
+  border-color: rgba(212, 160, 23, 0.45);
+  color: var(--gold);
+}
+.header-current-view strong {
+  color: var(--gold);
+}
+.view-tag {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+.view-caret {
+  font-size: 0.8rem;
+  opacity: 0.75;
+}
+
+/* Header User Pill on Desktop */
+.header-user-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 6px 12px;
+  color: #ffffff;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-size: 0.85rem;
+}
+.header-user-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(212, 160, 23, 0.45);
+}
+.avatar-circle-sm {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--gold);
+  color: #000000;
+  font-weight: 800;
+  font-size: 0.74rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* Tasks Alert in Header */
+.header-tasks-alert {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  height: 38px;
+  padding: 0 12px;
 }
 
 /* Mobile Quick Tasks Button */
@@ -914,11 +1001,11 @@ th { font-size: 0.76rem; color: var(--muted); text-transform: uppercase; letter-
   border: 1px solid rgba(239, 68, 68, 0.4);
   color: #ffffff;
   border-radius: 8px;
-  height: 42px;
-  padding: 0 12px;
+  height: 40px;
+  padding: 0 10px;
   align-items: center;
   gap: 6px;
-  font-size: 0.88rem;
+  font-size: 0.86rem;
   font-weight: 600;
   cursor: pointer;
 }
@@ -969,15 +1056,15 @@ th { font-size: 0.76rem; color: var(--muted); text-transform: uppercase; letter-
   pointer-events: auto;
 }
 
-/* Drawer Shell (Slides from LEFT) */
+/* Drawer Shell (Slides from LEFT on PC & Mobile) */
 .drawer {
   position: fixed;
   top: 0;
   left: 0;
   bottom: 0;
-  width: 320px;
+  width: 340px;
   max-width: 86vw;
-  background: #121212;
+  background: #141414;
   border-right: 2px solid rgba(212, 160, 23, 0.4);
   color: #ffffff;
   z-index: 2001;
@@ -985,7 +1072,7 @@ th { font-size: 0.76rem; color: var(--muted); text-transform: uppercase; letter-
   -webkit-overflow-scrolling: touch;
   transform: translateX(-100%);
   transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
-  box-shadow: 6px 0 28px rgba(0, 0, 0, 0.6);
+  box-shadow: 8px 0 32px rgba(0, 0, 0, 0.65);
   display: flex;
   flex-direction: column;
   padding: 0 0 32px 0;
@@ -1142,26 +1229,34 @@ th { font-size: 0.76rem; color: var(--muted); text-transform: uppercase; letter-
   flex: 1;
 }
 
-/* Responsive Switching between Hamburger and Desktop */
-@media (max-width: 859px) {
-  .hamburger-btn {
-    display: inline-flex;
+/* Responsive Styles */
+@media (max-width: 768px) {
+  .hamburger-label {
+    display: none;
   }
-  .mobile-tasks-btn {
-    display: inline-flex;
+  .hamburger-btn {
+    padding: 0;
+    width: 42px;
+    justify-content: center;
+  }
+  .header-current-view {
+    display: none !important;
+  }
+  .header-user-name,
+  .header-user-btn .badge {
+    display: none;
+  }
+  .header-user-btn {
+    padding: 6px;
+  }
+  .header-tasks-alert span:not(.badge) {
+    display: none;
   }
   .mobile-subbar {
     display: block;
   }
-  .topbar .user-bar {
-    display: none !important;
-  }
-  .tabs.desktop-tabs {
-    display: none !important;
-  }
   header.topbar {
     padding: 10px 14px;
-    flex-wrap: nowrap;
   }
   .topbar .brand h1 {
     font-size: 1rem;
@@ -1174,11 +1269,8 @@ th { font-size: 0.76rem; color: var(--muted); text-transform: uppercase; letter-
   }
 }
 
-@media (min-width: 860px) {
-  .drawer,
-  .drawer-backdrop,
+@media (min-width: 769px) {
   .mobile-subbar,
-  .hamburger-btn,
   .mobile-tasks-btn {
     display: none !important;
   }

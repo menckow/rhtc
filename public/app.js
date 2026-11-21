@@ -1884,13 +1884,14 @@ function render() {
   root.innerHTML = `
     ${renderInstallBannerHtml()}
     <header class="topbar">
-      <div style="display:flex;align-items:center;gap:12px;overflow:hidden">
+      <div style="display:flex;align-items:center;gap:14px;overflow:hidden">
         <button class="hamburger-btn" onclick="openDrawer()" aria-label="Menü öffnen" title="Menü öffnen">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
             <line x1="3" y1="6" x2="21" y2="6"></line>
             <line x1="3" y1="12" x2="21" y2="12"></line>
             <line x1="3" y1="18" x2="21" y2="18"></line>
           </svg>
+          <span class="hamburger-label">Menü</span>
         </button>
         <div class="brand">
           <div class="brand-crest">${RHTC_CREST_SVG}</div>
@@ -1901,27 +1902,28 @@ function render() {
         </div>
       </div>
 
-      ${
-        pendingCount > 0
-          ? `
-            <button class="mobile-tasks-btn" onclick="setTab('tasks')">
-              <span>📋</span> <span class="badge badge-red">${pendingCount}</span>
-            </button>
-          `
-          : ""
-      }
+      <div class="topbar-right">
+        <div class="header-current-view" onclick="openDrawer()" title="Bereich wechseln">
+          <span class="view-tag">Bereich:</span>
+          <strong>${tabLabels[state.tab] || state.tab}</strong>
+          <span class="view-caret">▾</span>
+        </div>
 
-      <div class="user-bar" style="flex-wrap:wrap">
-        <select onchange="changeSeason(this.value)" style="padding:5px 8px;border-radius:6px;border:1px solid rgba(212,160,23,0.55);background:#1e1e1e;color:#fff;font-size:0.82rem">
-          ${seasonOpts}
-        </select>
-        ${isWartOrAdmin ? `<button class="btn btn-outline btn-sm" onclick="openAddSeasonModal()">+ Saison</button>` : ""}
-        ${isWartOrAdmin && currentSeason ? `<button class="btn btn-outline btn-sm" onclick="openEditSeasonModal()">Umbenennen</button>` : ""}
-        ${isWartOrAdmin && currentSeason && seasonsList.length > 1 ? `<button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:rgba(239,68,68,0.5)" onclick="deleteSeason(${currentSeason.id}, '${esc(currentSeason.name)}')">Löschen</button>` : ""}
-        ${isWartOrAdmin && currentSeason && !currentSeason.is_active ? `<button class="btn btn-warn btn-sm" onclick="activateSeason(${currentSeason.id})">Aktiv setzen</button>` : ""}
-        <span><strong>${esc(fullName(state.user))}</strong> (${roleLabel(state.user.role)})</span>
-        <button class="btn btn-outline btn-sm" onclick="openProfileModal()">Mein Profil</button>
-        <button class="btn btn-outline btn-sm" onclick="logout()">Abmelden</button>
+        ${
+          pendingCount > 0
+            ? `
+              <button class="btn btn-danger btn-sm header-tasks-alert" onclick="setTab('tasks')">
+                <span>📋 Meine Aufgaben</span> <span class="badge badge-red" style="background:#fff;color:var(--danger);font-weight:800">${pendingCount}</span>
+              </button>
+            `
+            : ""
+        }
+
+        <button class="header-user-btn" onclick="openDrawer()" title="Menü &amp; Profil öffnen">
+          <span class="avatar-circle-sm">${((state.user.first_name?.[0] || "") + (state.user.last_name?.[0] || "")).toUpperCase()}</span>
+          <span class="header-user-name">${esc(fullName(state.user))}</span>
+          <span class="badge badge-gray" style="font-size:0.72rem">${roleLabel(state.user.role)}</span>
+        </button>
       </div>
     </header>
 
@@ -2032,21 +2034,6 @@ function render() {
 
     <div class="container">
       ${state.error ? `<div class="alert alert-danger">${esc(state.error)}</div>` : ""}
-      <div class="tabs desktop-tabs">
-        <button class="tab-btn ${state.tab === "games" ? "active" : ""}" onclick="setTab('games')">Spielplan &amp; Ansetzungen</button>
-        <button class="tab-btn ${state.tab === "calendar" ? "active" : ""}" onclick="setTab('calendar')">Kalender</button>
-        <button class="tab-btn ${state.tab === "tasks" ? "active" : ""}" onclick="setTab('tasks')">Meine Aufgaben ${pendingCount > 0 ? `<span class="badge badge-red">${pendingCount}</span>` : ""}</button>
-        ${
-          showAdminTabs
-            ? `
-              <button class="tab-btn ${state.tab === "chains" ? "active" : ""}" onclick="setTab('chains')">Weitergabeketten</button>
-              <button class="tab-btn ${state.tab === "players" ? "active" : ""}" onclick="setTab('players')">Schiedsrichterliste (§ 2)</button>
-              <button class="tab-btn ${state.tab === "treasury" ? "active" : ""}" onclick="setTab('treasury')">Kasse &amp; Härtefälle</button>
-              <button class="tab-btn ${state.tab === "docs" ? "active" : ""}" onclick="setTab('docs')">Dokumentation (§ 6)</button>
-            `
-            : ""
-        }
-      </div>
       ${tabContent}
     </div>
     ${renderModal()}
