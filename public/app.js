@@ -451,12 +451,14 @@ function renderGamesTab() {
                 ? `
                   <button class="btn btn-success btn-sm" onclick="respondHandoff(${ch.id}, 'ACCEPT')">Annehmen (Bestätigen)</button>
                   <button class="btn btn-outline btn-sm" onclick="handoffById(${ch.id})">Weiterleiten</button>
+                  <button class="btn btn-outline btn-sm" onclick="downloadGameIcs(${ch.id})" title="Als Kalender-Termin (.ics) herunterladen">📅 In Kalender</button>
                 `
                 : ""
             }
             ${
               (isResponsible || isWart) && ch.status === "CONFIRMED"
                 ? `
+                  <button class="btn btn-outline btn-sm" onclick="downloadGameIcs(${ch.id})" title="Als Kalender-Termin (.ics) herunterladen">📅 In Kalender</button>
                   <button class="btn btn-outline btn-sm" onclick="handoffById(${ch.id})">Weiterleiten</button>
                   ${
                     new Date(game.kickoff_at).getTime() <= Date.now() || isWart
@@ -729,6 +731,36 @@ function renderTasksTab() {
 
   let html = `<h2 style="margin-top:0;font-size:1.1rem">Meine Aufgaben &amp; Ansetzungen</h2>`;
 
+  const calToken = state.user?.cal_token || "";
+  if (calToken) {
+    const origin = window.location.origin;
+    const httpsCalUrl = `${origin}/api/calendar/feed/${calToken}.ics`;
+    const webcalUrl = httpsCalUrl.replace(/^https?:\/\//i, "webcal://");
+    html += `
+      <div class="card cal-sync-box">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
+          <div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="font-size:1.3rem">🗓</span>
+              <strong style="font-size:0.98rem">Persönlicher Schiedsrichter-Kalender</strong>
+            </div>
+            <p style="margin:4px 0 0 0;font-size:0.83rem;color:var(--muted);max-width:560px">
+              Abonniere deine Spiele direkt in Apple Kalender, Google Kalender oder Outlook. Neue Ansetzungen und Änderungen synchronisieren sich automatisch.
+            </p>
+          </div>
+          <div class="btn-row" style="margin-top:2px">
+            <a href="${webcalUrl}" class="btn btn-primary btn-sm" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px">
+              <span>📅</span> 1-Klick-Abo
+            </a>
+            <button class="btn btn-outline btn-sm" onclick="copyCalLink('${httpsCalUrl}')" style="display:inline-flex;align-items:center;gap:6px">
+              <span>🔗</span> Link kopieren
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   if (pendingForMe.length === 0 && voluntaryRequestsForMe.length === 0) {
     html += `<div class="alert alert-info">Aktuell liegen keine offenen Anfragen für dich vor.</div>`;
   }
@@ -741,6 +773,7 @@ function renderTasksTab() {
         <div class="btn-row">
           <button class="btn btn-success btn-sm" onclick="respondHandoff(${ch.id}, 'ACCEPT')">Annehmen (Bestätigen)</button>
           <button class="btn btn-warn btn-sm" onclick="handoffById(${ch.id})">Weiterleiten (Ehrenamt / Härtefall / 15 €)</button>
+          <button class="btn btn-outline btn-sm" onclick="downloadGameIcs(${ch.id})" title="Als Kalender-Termin (.ics) herunterladen">📅 In Kalender</button>
         </div>
       </div>
     `;
@@ -763,7 +796,7 @@ function renderTasksTab() {
   if (myAssignments.length === 0) {
     html += `<p style="color:var(--muted)">Du bist aktuell für kein Spiel angesetzt.</p>`;
   } else {
-    html += `<table class="responsive-table"><thead><tr><th>ID</th><th>Spiel</th><th>Termin</th><th>Slot</th><th>Status</th><th>Topf</th></tr></thead><tbody>`;
+    html += `<table class="responsive-table"><thead><tr><th>ID</th><th>Spiel</th><th>Termin</th><th>Slot</th><th>Status</th><th>Topf</th><th style="text-align:right">Kalender</th></tr></thead><tbody>`;
     for (const { g, ch } of myAssignments) {
       html += `<tr>
         <td class="cell-main"><strong>${esc(g.title)}</strong> <span class="badge badge-gray">${esc(ch.ref_code || "–")}</span></td>
@@ -771,6 +804,11 @@ function renderTasksTab() {
         <td data-label="Slot">Slot ${ch.slot_number}</td>
         <td data-label="Status">${statusBadge(ch.status)}</td>
         <td data-label="Topf">${ch.payout_pool_cents > 0 ? formatEuro(ch.payout_pool_cents) : "–"}</td>
+        <td data-label="Kalender" style="text-align:right">
+          <button class="btn btn-outline btn-sm" onclick="downloadGameIcs(${ch.id})" title="Als .ics herunterladen" style="padding:4px 8px;font-size:0.8rem;white-space:nowrap">
+            📅 In Kalender
+          </button>
+        </td>
       </tr>`;
     }
     html += `</tbody></table>`;
@@ -1813,6 +1851,7 @@ function render() {
   else if (state.tab === "docs" && showAdminTabs) tabContent = renderDocsTab();
 
   root.innerHTML = `
+    ${renderInstallBannerHtml()}
     <header class="topbar">
       <div class="brand">
         <div class="brand-crest">${RHTC_CREST_SVG}</div>
@@ -2625,5 +2664,181 @@ window.openProfileModal = openProfileModal;
 window.openEditPlayerModal = openEditPlayerModal;
 window.openHardshipModal = openHardshipModal;
 window.closeModal = closeModal;
+
+// --- PWA Installation & Service Worker ---
+let deferredPrompt = null;
+if (typeof window !== "undefined") {
+  window.addEventListener("beforeinstallprompt", (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    const bar = document.getElementById("pwa-install-bar");
+    if (bar) bar.style.display = "flex";
+  });
+
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("/sw.js").catch(() => {});
+    });
+  }
+}
+
+function renderInstallBannerHtml() {
+  if (typeof window === "undefined") return "";
+  const isStandalone =
+    (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) ||
+    navigator.standalone === true;
+  if (isStandalone) return "";
+  if (localStorage.getItem("rhtc_hide_pwa_banner") === "true") return "";
+
+  return `
+    <div class="pwa-install-banner" id="pwa-install-bar">
+      <div style="display:flex;align-items:center;gap:10px">
+        <img src="/icon-192.png" width="30" height="30" style="border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,0.3)" alt="App Icon" />
+        <div>
+          <strong style="font-size:0.86rem;color:#ffffff;display:block">RHTC Schiri als App installieren</strong>
+          <span style="font-size:0.75rem;color:rgba(255,255,255,0.8)">Direkt vom Startbildschirm aufrufen &bull; Schneller Start</span>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <button class="btn btn-sm" style="background:#fbbf24;color:#0f2b48;font-weight:700;border:none;padding:5px 12px;font-size:0.8rem;cursor:pointer;border-radius:5px" onclick="triggerPwaInstall()">App holen</button>
+        <button style="background:transparent;border:none;color:#ffffff;font-size:1.1rem;cursor:pointer;padding:4px 8px;opacity:0.75" onclick="dismissInstallBanner()" title="Ausblenden">&times;</button>
+      </div>
+    </div>
+  `;
+}
+
+window.triggerPwaInstall = async () => {
+  if (deferredPrompt) {
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    deferredPrompt = null;
+    window.dismissInstallBanner();
+  } else {
+    const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    if (isIos) {
+      alert(
+        "App auf dem iPhone/iPad installieren:\n\n1. Tippe unten im Safari auf das 'Teilen'-Symbol (Viereck mit Pfeil nach oben).\n2. Scrolle etwas nach unten und wähle 'Zum Home-Bildschirm'.\n3. Tippe oben rechts auf 'Hinzufügen'."
+      );
+    } else {
+      alert(
+        "App installieren:\n\nTippe im Browser-Menü (drei Punkte oben rechts) auf 'App installieren' oder 'Zum Startbildschirm hinzufügen'."
+      );
+    }
+  }
+};
+
+window.dismissInstallBanner = () => {
+  localStorage.setItem("rhtc_hide_pwa_banner", "true");
+  const bar = document.getElementById("pwa-install-bar");
+  if (bar) bar.style.display = "none";
+};
+
+// --- Kalender-Export & WebCal-Abo ---
+window.copyCalLink = (url) => {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard
+      .writeText(url)
+      .then(() => {
+        alert(
+          "Kalender-Abo-Link in die Zwischenablage kopiert!\n\nDu kannst ihn in Google Kalender, Apple Kalender oder Outlook unter 'Kalender abonnieren / per URL hinzufügen' einfügen."
+        );
+      })
+      .catch(() => {
+        prompt("Kalender-Abo-Link kopieren:", url);
+      });
+  } else {
+    prompt("Kalender-Abo-Link kopieren:", url);
+  }
+};
+
+window.downloadGameIcs = (chainId) => {
+  let targetGame = null;
+  let targetChain = null;
+  for (const g of state.data?.games || []) {
+    for (const ch of g.chains || []) {
+      if (ch.id === chainId) {
+        targetGame = g;
+        targetChain = ch;
+        break;
+      }
+    }
+    if (targetChain) break;
+  }
+  if (!targetGame || !targetChain) {
+    alert("Spiel nicht gefunden.");
+    return;
+  }
+
+  const partnerChain = targetGame.chains?.find((c) => c.id !== targetChain.id);
+  const partnerId =
+    partnerChain?.current_assignee_id || partnerChain?.pending_assignee_id;
+  const partner = partnerId
+    ? state.data?.players?.find((p) => p.id === partnerId)
+    : null;
+  let partnerText = "Offen / noch nicht besetzt";
+  if (partner) {
+    partnerText = `${partner.first_name} ${partner.last_name}`;
+    if (partner.mobile_number) {
+      partnerText += ` (Mobil: ${partner.mobile_number})`;
+    }
+  }
+
+  const kickoff = new Date(targetGame.kickoff_at);
+  const end = new Date(kickoff.getTime() + 90 * 60 * 1000);
+  const pad = (n) => String(n).padStart(2, "0");
+  const formatUtc = (d) =>
+    `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}T${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}Z`;
+
+  const nowStr = formatUtc(new Date());
+  const startStr = formatUtc(kickoff);
+  const endStr = formatUtc(end);
+
+  const desc = [
+    `Schiedsrichter-Einsatz: Slot ${targetChain.slot_number}`,
+    `Schiri-Code: ${targetChain.ref_code || "-"}`,
+    `Status: ${targetChain.status === "CONFIRMED" ? "Bestätigt" : "Offen / Unbestätigt"}`,
+    `Schiri-Partner: ${partnerText}`,
+    `Ort/Halle: ${targetGame.location || "RHTC Hamburg"}`,
+  ].join("\\n");
+
+  const ics = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//RHTC Hamburg//Schiedsrichter Portal//DE",
+    "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
+    "BEGIN:VEVENT",
+    `UID:rhtc-chain-${targetChain.id}@rhtc.de`,
+    `DTSTAMP:${nowStr}`,
+    `DTSTART:${startStr}`,
+    `DTEND:${endStr}`,
+    `SUMMARY:RHTC Schiri: ${targetGame.title} (Slot ${targetChain.slot_number})`,
+    `LOCATION:${targetGame.location || "RHTC Hamburg"}`,
+    `DESCRIPTION:${desc}`,
+    `STATUS:${targetChain.status === "CONFIRMED" ? "CONFIRMED" : "TENTATIVE"}`,
+    "BEGIN:VALARM",
+    "TRIGGER:-P1D",
+    "ACTION:DISPLAY",
+    "DESCRIPTION:Erinnerung: Schiri-Einsatz morgen",
+    "END:VALARM",
+    "BEGIN:VALARM",
+    "TRIGGER:-PT2H",
+    "ACTION:DISPLAY",
+    "DESCRIPTION:Erinnerung: Schiri-Einsatz in 2 Stunden",
+    "END:VALARM",
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ].join("\r\n");
+
+  const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `rhtc-spiel-${targetGame.id}-slot-${targetChain.slot_number}.ics`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
 
 loadDashboard();

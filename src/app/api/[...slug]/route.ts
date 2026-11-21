@@ -1,14 +1,17 @@
 import { NextResponse } from "next/server";
 import { repo } from "@/lib/repository";
 import {
+  createCalendarToken,
   createSessionToken,
   getSessionUserFromHeader,
   hashPassword,
   invalidateUserSessionCache,
   makeClearCookieHeader,
   makeSessionCookieHeader,
+  verifyCalendarToken,
   verifyPassword,
 } from "@/lib/auth";
+import { generateIcalCalendar } from "@/lib/calendar";
 import {
   buildGroupChatMessage,
   findNextFreePlayerAsync,
@@ -47,6 +50,62 @@ export async function GET(
   if (path === "/auth/me") {
     const user = await getAuthUser(req);
     return NextResponse.json({ user });
+  }
+
+  // 1b. /api/calendar/feed/:token (oder :token.ics)
+  const calFeedMatch = path.match(/^\/calendar\/feed\/([^/]+?)(\.ics)?$/);
+  if (calFeedMatch) {
+    const rawToken = calFeedMatch[1];
+    const token = rawToken.replace(/\.ics$/, "");
+    const targetUserId = verifyCalendarToken(token);
+    if (!targetUserId) {
+      return new NextResponse("Ungültiger oder abgelaufener Kalender-Token.", {
+        status: 401,
+        headers: { "Content-Type": "text/plain; charset=utf-8" },
+      });
+    }
+    const targetUser = await repo.users.findById(targetUserId);
+    if (!targetUser) {
+      return new NextResponse("Benutzer nicht gefunden.", {
+        status: 404,
+        headers: { "Content-Type": "text/plain; charset=utf-8" },
+      });
+    }
+
+    const allSeasons = await repo.seasons.listAll();
+    const activeSeason = allSeasons.find((s) => s.is_active) || allSeasons[0];
+    const seasonGames = activeSeason ? await repo.games.listBySeason(activeSeason.id) : [];
+    const gameIds = seasonGames.map((g) => g.id);
+
+    const allChains = gameIds.length > 0 ? await repo.chains.listByGameIds(gameIds) : [];
+    const allUsers = await repo.users.listAll();
+    const userMap = new Map(allUsers.map((u) => [u.id, u]));
+
+    const myChains = allChains.filter(
+      (c) => c.current_assignee_id === targetUserId || c.pending_assignee_id === targetUserId
+    );
+
+    const items = myChains
+      .map((c) => {
+        const game = seasonGames.find((g) => g.id === c.game_id)!;
+        const partnerChain = allChains.find(
+          (other) => other.game_id === c.game_id && other.id !== c.id
+        );
+        const partnerId = partnerChain?.current_assignee_id || partnerChain?.pending_assignee_id;
+        const partner = partnerId ? userMap.get(partnerId) : null;
+        return { game, chain: c, partner };
+      })
+      .filter((item) => Boolean(item.game));
+
+    const icsContent = generateIcalCalendar(items, targetUser);
+    return new NextResponse(icsContent, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/calendar; charset=utf-8",
+        "Content-Disposition": `inline; filename="rhtc-schiri-${targetUserId}.ics"`,
+        "Cache-Control": "no-cache, no-store, max-age=0, must-revalidate",
+      },
+    });
   }
 
   // Für alle nachfolgenden Routen ist Authentifizierung erforderlich

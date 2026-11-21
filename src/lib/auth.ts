@@ -22,6 +22,29 @@ export function verifyPassword(password: string, storedHash: string): boolean {
   return crypto.timingSafeEqual(derived, keyBuf);
 }
 
+export function createCalendarToken(userId: number): string {
+  const hash = crypto
+    .createHmac("sha256", SECRET)
+    .update(`cal:${userId}`)
+    .digest("hex")
+    .slice(0, 24);
+  return `${userId}-${hash}`;
+}
+
+export function verifyCalendarToken(token: string): number | null {
+  const parts = token.split("-");
+  if (parts.length !== 2) return null;
+  const userId = Number(parts[0]);
+  if (!userId || isNaN(userId)) return null;
+  const expectedHash = crypto
+    .createHmac("sha256", SECRET)
+    .update(`cal:${userId}`)
+    .digest("hex")
+    .slice(0, 24);
+  if (parts[1] !== expectedHash) return null;
+  return userId;
+}
+
 export function createSessionToken(userId: number): string {
   const exp = Date.now() + 30 * 24 * 60 * 60 * 1000;
   const payload = Buffer.from(JSON.stringify({ userId, exp })).toString(
@@ -83,7 +106,11 @@ export function getSessionUser(req: IncomingMessage): SafeUser | null {
     .get(userId) as UserRow | undefined;
   if (!row) return null;
 
-  const { password_hash: _, ...safeUser } = row;
+  const { password_hash: _, ...baseUser } = row;
+  const safeUser: SafeUser = {
+    ...baseUser,
+    cal_token: createCalendarToken(row.id),
+  };
   return safeUser;
 }
 
@@ -124,7 +151,11 @@ export async function getSessionUserFromHeader(
   const row = await repo.users.findById(userId);
   if (!row) return null;
 
-  const { password_hash: _, ...safeUser } = row;
+  const { password_hash: _, ...baseUser } = row;
+  const safeUser: SafeUser = {
+    ...baseUser,
+    cal_token: createCalendarToken(row.id),
+  };
   userSessionCache.set(userId, { user: safeUser, expiresAt: now + 60_000 });
   return safeUser;
 }

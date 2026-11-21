@@ -767,3 +767,71 @@ th { font-size: 0.76rem; color: var(--muted); text-transform: uppercase; letter-
     display: inline;
   }
 }
+
+/* --- PWA Install Banner --- */
+.pwa-install-banner {
+  background: linear-gradient(90deg, #0a1d33 0%, #14365d 100%);
+  border-bottom: 2px solid var(--accent);
+  color: #ffffff;
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  position: relative;
+  z-index: 100;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.25);
+}
+
+@media (max-width: 600px) {
+  .pwa-install-banner {
+    padding: 8px 12px;
+    flex-wrap: wrap;
+  }
+}
+
+/* --- Calendar Sync Box --- */
+.cal-sync-box {
+  background: linear-gradient(135deg, rgba(20,54,93,0.06), rgba(217,119,6,0.06));
+  border-left: 4px solid var(--accent) !important;
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+
+.cal-sync-box strong {
+  color: var(--text);
+}
+
+@media (max-width: 640px) {
+  .cal-sync-box .btn-row {
+    width: 100%;
+    margin-top: 10px;
+    display: flex;
+    flex-direction: row;
+    gap: 8px;
+  }
+  .cal-sync-box .btn-row .btn {
+    flex: 1;
+    justify-content: center;
+    font-size: 0.8rem;
+    padding: 8px 10px;
+  }
+}
+
+/* Touch Friendly Mobile Buttons in Tasks */
+@media (max-width: 720px) {
+  .btn-row {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .btn-row .btn {
+    min-height: 40px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .card .btn-row .btn {
+    flex: 1 1 calc(50% - 8px);
+  }
+}

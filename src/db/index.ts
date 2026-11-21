@@ -148,7 +148,7 @@ export interface UserRow {
   created_at: string;
 }
 
-export type SafeUser = Omit<UserRow, "password_hash">;
+export type SafeUser = Omit<UserRow, "password_hash"> & { cal_token?: string };
 
 export interface GameRow {
   id: number;
