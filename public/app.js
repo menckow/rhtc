@@ -214,6 +214,20 @@ function closeModal() {
 
 const RHTC_CREST_SVG = `<img src="https://rhtc.de/wp-content/uploads/2022/04/RHTC-Logo-ohne-Punkte-weisser-Kreisrand.png" alt="RHTC Logo" class="brand-logo" />`;
 
+const EYE_OPEN_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
+const EYE_OFF_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>`;
+
+window.togglePasswordVisibility = (inputId, btn) => {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  const isPass = input.type === "password";
+  input.type = isPass ? "text" : "password";
+  if (btn) {
+    btn.innerHTML = isPass ? EYE_OFF_SVG : EYE_OPEN_SVG;
+    btn.setAttribute("title", isPass ? "Passwort verbergen" : "Passwort anzeigen");
+  }
+};
+
 function renderLogin() {
   return `
     <div class="login-wrap">
@@ -232,25 +246,22 @@ function renderLogin() {
         <form id="login-form">
           <div class="form-group">
             <label>E-Mail</label>
-            <input type="email" id="login-email" required placeholder="z. B. albers@rhtc.de" />
+            <input type="email" id="login-email" required placeholder="z. B. albers@rhtc.de" autocomplete="username" />
           </div>
           <div class="form-group">
             <label>Passwort</label>
-            <input type="password" id="login-password" required value="rhtc2026" />
+            <div class="password-wrap">
+              <input type="password" id="login-password" required placeholder="Passwort eingeben" autocomplete="current-password" />
+              <button type="button" class="password-toggle-btn" onclick="togglePasswordVisibility('login-password', this)" title="Passwort anzeigen">
+                ${EYE_OPEN_SVG}
+              </button>
+            </div>
           </div>
-          <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center">Anmelden</button>
+          <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:6px">Anmelden</button>
         </form>
-        <div style="margin-top:18px;border-top:1px solid var(--border);padding-top:12px">
-          <div style="font-size:0.8rem;color:var(--muted);font-weight:600">Schnell-Login (Demo-Accounts, Passwort: rhtc2026):</div>
-          <div class="quick-logins">
-            <button class="btn btn-outline btn-sm" onclick="quickLogin('albers@rhtc.de')">Spieler (Albers)</button>
-            <button class="btn btn-outline btn-sm" onclick="quickLogin('claasen@rhtc.de')">Spieler (Claasen)</button>
-            <button class="btn btn-outline btn-sm" onclick="quickLogin('grote@rhtc.de')">Bereits eingesetzt (Grote)</button>
-            <button class="btn btn-outline btn-sm" onclick="quickLogin('becker@rhtc.de')">Schiedsrichterwart (Becker)</button>
-            <button class="btn btn-outline btn-sm" onclick="quickLogin('dierks@rhtc.de')">Kassenwart (Dierks)</button>
-            <button class="btn btn-outline btn-sm" onclick="quickLogin('franke@rhtc.de')">Vorstand (Franke)</button>
-          </div>
-        </div>
+        <p style="font-size:0.8rem;color:var(--muted);text-align:center;margin-top:16px;margin-bottom:0">
+          Passwort vergessen? Bitte wende dich an deinen Schiedsrichterwart.
+        </p>
       </div>
     </div>
   `;
@@ -1713,7 +1724,12 @@ function renderModal() {
             </div>
             <div class="form-group">
               <label>Neues Passwort (optional, leer lassen = unverändert)</label>
-              <input type="password" id="ep-pass" placeholder="Nur ausfüllen zum Zurücksetzen" />
+              <div class="password-wrap">
+                <input type="password" id="ep-pass" placeholder="Nur ausfüllen zum Zurücksetzen" autocomplete="new-password" />
+                <button type="button" class="password-toggle-btn" onclick="togglePasswordVisibility('ep-pass', this)" title="Passwort anzeigen">
+                  ${EYE_OPEN_SVG}
+                </button>
+              </div>
             </div>
             <div class="btn-row">
               <button type="submit" class="btn btn-primary">Änderungen speichern</button>
@@ -1743,7 +1759,12 @@ function renderModal() {
             </div>
             <div class="form-group">
               <label>Neues Passwort (optional, leer lassen = unverändert)</label>
-              <input type="password" id="prof-pass" placeholder="Neues Passwort eingeben" />
+              <div class="password-wrap">
+                <input type="password" id="prof-pass" placeholder="Neues Passwort eingeben" autocomplete="new-password" />
+                <button type="button" class="password-toggle-btn" onclick="togglePasswordVisibility('prof-pass', this)" title="Passwort anzeigen">
+                  ${EYE_OPEN_SVG}
+                </button>
+              </div>
             </div>
             <div class="btn-row">
               <button type="submit" class="btn btn-primary">Stammdaten speichern</button>

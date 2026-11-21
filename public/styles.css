@@ -835,3 +835,45 @@ th { font-size: 0.76rem; color: var(--muted); text-transform: uppercase; letter-
     flex: 1 1 calc(50% - 8px);
   }
 }
+
+/* --- Password Toggle / Preview --- */
+.password-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.password-wrap input {
+  width: 100%;
+  padding-right: 42px !important;
+}
+
+.password-toggle-btn {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: color 0.15s ease, background 0.15s ease;
+  z-index: 2;
+}
+
+.password-toggle-btn:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.password-toggle-btn svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
