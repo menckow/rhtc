@@ -1871,16 +1871,46 @@ function render() {
   else if (state.tab === "treasury" && showAdminTabs) tabContent = renderTreasuryTab();
   else if (state.tab === "docs" && showAdminTabs) tabContent = renderDocsTab();
 
+  const tabLabels = {
+    games: "Spielplan & Ansetzungen",
+    calendar: "Kalender",
+    tasks: "Meine Aufgaben",
+    chains: "Weitergabeketten",
+    players: "Schiedsrichterliste (§ 2)",
+    treasury: "Kasse & Härtefälle",
+    docs: "Dokumentation (§ 6)",
+  };
+
   root.innerHTML = `
     ${renderInstallBannerHtml()}
     <header class="topbar">
-      <div class="brand">
-        <div class="brand-crest">${RHTC_CREST_SVG}</div>
-        <div>
-          <h1>RHTC II – Schiedsrichterverwaltung</h1>
-          <span>${esc(currentSeason?.name || "Saison")} &bull; Schwarz-Gold</span>
+      <div style="display:flex;align-items:center;gap:12px;overflow:hidden">
+        <button class="hamburger-btn" onclick="openDrawer()" aria-label="Menü öffnen" title="Menü öffnen">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <line x1="3" y1="12" x2="21" y2="12"></line>
+            <line x1="3" y1="18" x2="21" y2="18"></line>
+          </svg>
+        </button>
+        <div class="brand">
+          <div class="brand-crest">${RHTC_CREST_SVG}</div>
+          <div>
+            <h1>RHTC II – Schiedsrichterverwaltung</h1>
+            <span>${esc(currentSeason?.name || "Saison")} &bull; Schwarz-Gold</span>
+          </div>
         </div>
       </div>
+
+      ${
+        pendingCount > 0
+          ? `
+            <button class="mobile-tasks-btn" onclick="setTab('tasks')">
+              <span>📋</span> <span class="badge badge-red">${pendingCount}</span>
+            </button>
+          `
+          : ""
+      }
+
       <div class="user-bar" style="flex-wrap:wrap">
         <select onchange="changeSeason(this.value)" style="padding:5px 8px;border-radius:6px;border:1px solid rgba(212,160,23,0.55);background:#1e1e1e;color:#fff;font-size:0.82rem">
           ${seasonOpts}
@@ -1894,9 +1924,115 @@ function render() {
         <button class="btn btn-outline btn-sm" onclick="logout()">Abmelden</button>
       </div>
     </header>
+
+    <div class="mobile-subbar">
+      <button class="mobile-subbar-btn" onclick="openDrawer()">
+        <span style="font-size:1.1rem;color:var(--gold)">☰</span>
+        <span>Bereich: <strong>${tabLabels[state.tab] || state.tab}</strong></span>
+        <span style="margin-left:auto;color:var(--muted);font-size:0.75rem">Tippen zum Wechseln ▾</span>
+      </button>
+    </div>
+
+    <!-- Slide-Over Drawer & Backdrop -->
+    <div class="drawer-backdrop" id="drawer-backdrop" onclick="closeDrawer()"></div>
+    <aside class="drawer" id="mobile-drawer">
+      <div class="drawer-header">
+        <div class="brand">
+          <div class="brand-crest" style="width:36px;height:36px">${RHTC_CREST_SVG}</div>
+          <div>
+            <h2 style="margin:0;font-size:1.05rem;font-weight:800;color:#fff">RHTC Schiri</h2>
+            <span style="font-size:0.75rem;color:var(--gold);font-weight:600">2. Herren &bull; Schwarz-Gold</span>
+          </div>
+        </div>
+        <button class="drawer-close-btn" onclick="closeDrawer()" title="Menü schließen">&times;</button>
+      </div>
+
+      <div class="drawer-user-card">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div class="drawer-user-avatar">${((state.user.first_name?.[0] || "") + (state.user.last_name?.[0] || "")).toUpperCase()}</div>
+          <div style="overflow:hidden">
+            <div style="font-weight:700;font-size:0.92rem;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+              ${esc(fullName(state.user))}
+            </div>
+            <div style="font-size:0.75rem;color:var(--gold)">
+              ${roleLabel(state.user.role)}
+            </div>
+          </div>
+        </div>
+        <div class="drawer-user-actions">
+          <button class="btn btn-outline btn-sm" onclick="openProfileModal(); closeDrawer()">👤 Mein Profil</button>
+          <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:rgba(239,68,68,0.4)" onclick="logout(); closeDrawer()">🚪 Abmelden</button>
+        </div>
+      </div>
+
+      <div class="drawer-section">
+        <div class="drawer-section-title">Saison</div>
+        <div class="drawer-season-wrap">
+          <select onchange="changeSeason(this.value); closeDrawer()" class="drawer-season-select">
+            ${seasonOpts}
+          </select>
+          ${
+            isWartOrAdmin
+              ? `
+                <div class="drawer-season-actions">
+                  <button class="btn btn-outline btn-sm" onclick="openAddSeasonModal(); closeDrawer()">+ Saison</button>
+                  ${currentSeason ? `<button class="btn btn-outline btn-sm" onclick="openEditSeasonModal(); closeDrawer()">Umbenennen</button>` : ""}
+                  ${currentSeason && !currentSeason.is_active ? `<button class="btn btn-warn btn-sm" onclick="activateSeason(${currentSeason.id}); closeDrawer()">Aktivieren</button>` : ""}
+                  ${currentSeason && seasonsList.length > 1 ? `<button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:rgba(239,68,68,0.4)" onclick="deleteSeason(${currentSeason.id}, '${esc(currentSeason.name)}'); closeDrawer()">Löschen</button>` : ""}
+                </div>
+              `
+              : ""
+          }
+        </div>
+      </div>
+
+      <div class="drawer-section" style="flex:1">
+        <div class="drawer-section-title">Navigation</div>
+        <nav class="drawer-nav">
+          <button class="drawer-nav-item ${state.tab === "games" ? "active" : ""}" onclick="setTab('games')">
+            <span class="drawer-nav-icon">🏑</span>
+            <span class="drawer-nav-text">Spielplan &amp; Ansetzungen</span>
+          </button>
+          <button class="drawer-nav-item ${state.tab === "calendar" ? "active" : ""}" onclick="setTab('calendar')">
+            <span class="drawer-nav-icon">📅</span>
+            <span class="drawer-nav-text">Kalender</span>
+          </button>
+          <button class="drawer-nav-item ${state.tab === "tasks" ? "active" : ""}" onclick="setTab('tasks')">
+            <span class="drawer-nav-icon">📋</span>
+            <span class="drawer-nav-text">Meine Aufgaben</span>
+            ${pendingCount > 0 ? `<span class="badge badge-red" style="margin-left:auto">${pendingCount}</span>` : ""}
+          </button>
+
+          ${
+            showAdminTabs
+              ? `
+                <div class="drawer-section-title" style="margin-top:16px">Verwaltung &amp; Regeln (§§ 1–8)</div>
+                <button class="drawer-nav-item ${state.tab === "chains" ? "active" : ""}" onclick="setTab('chains')">
+                  <span class="drawer-nav-icon">🔄</span>
+                  <span class="drawer-nav-text">Weitergabeketten</span>
+                </button>
+                <button class="drawer-nav-item ${state.tab === "players" ? "active" : ""}" onclick="setTab('players')">
+                  <span class="drawer-nav-icon">👥</span>
+                  <span class="drawer-nav-text">Schiedsrichterliste (§ 2)</span>
+                </button>
+                <button class="drawer-nav-item ${state.tab === "treasury" ? "active" : ""}" onclick="setTab('treasury')">
+                  <span class="drawer-nav-icon">💰</span>
+                  <span class="drawer-nav-text">Kasse &amp; Härtefälle</span>
+                </button>
+                <button class="drawer-nav-item ${state.tab === "docs" ? "active" : ""}" onclick="setTab('docs')">
+                  <span class="drawer-nav-icon">📄</span>
+                  <span class="drawer-nav-text">Dokumentation (§ 6)</span>
+                </button>
+              `
+              : ""
+          }
+        </nav>
+      </div>
+    </aside>
+
     <div class="container">
       ${state.error ? `<div class="alert alert-danger">${esc(state.error)}</div>` : ""}
-      <div class="tabs">
+      <div class="tabs desktop-tabs">
         <button class="tab-btn ${state.tab === "games" ? "active" : ""}" onclick="setTab('games')">Spielplan &amp; Ansetzungen</button>
         <button class="tab-btn ${state.tab === "calendar" ? "active" : ""}" onclick="setTab('calendar')">Kalender</button>
         <button class="tab-btn ${state.tab === "tasks" ? "active" : ""}" onclick="setTab('tasks')">Meine Aufgaben ${pendingCount > 0 ? `<span class="badge badge-red">${pendingCount}</span>` : ""}</button>
@@ -2161,7 +2297,32 @@ function attachModalHandlers() {
   }
 }
 
+window.openDrawer = () => {
+  const d = document.getElementById("mobile-drawer");
+  const b = document.getElementById("drawer-backdrop");
+  if (d) d.classList.add("open");
+  if (b) b.classList.add("open");
+  document.body.classList.add("drawer-open");
+};
+
+window.closeDrawer = () => {
+  const d = document.getElementById("mobile-drawer");
+  const b = document.getElementById("drawer-backdrop");
+  if (d) d.classList.remove("open");
+  if (b) b.classList.remove("open");
+  document.body.classList.remove("drawer-open");
+};
+
+if (typeof window !== "undefined") {
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      window.closeDrawer();
+    }
+  });
+}
+
 window.setTab = (t) => {
+  if (typeof window.closeDrawer === "function") window.closeDrawer();
   state.tab = t;
   state.error = null;
   render();
