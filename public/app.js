@@ -234,8 +234,7 @@ function renderLogin() {
       <div class="login-brand">
         <div class="brand-crest">${RHTC_CREST_SVG}</div>
         <div>
-          <div style="font-weight:800;font-size:1.1rem">RHTC – 2. Herren</div>
-          <div style="font-size:0.78rem;color:var(--gold);font-weight:600">Schwarz-Gold &bull; Schiedsrichterverwaltung</div>
+          <div style="font-weight:800;font-size:1.1rem">Schiri-Ansetzungen</div>
         </div>
       </div>
       <div class="card login-card">
@@ -357,7 +356,7 @@ function renderGamesTab() {
 
   let html = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
-      <h2 style="margin:0;font-size:1.1rem">Hallenspiele &amp; Schiedsrichter-Ansetzungen (§ 3)</h2>
+      <h2 style="margin:0;font-size:1.1rem">Schiri-Ansetzungen</h2>
       <div class="btn-row" style="margin:0">
         ${
           hiddenCount > 0
@@ -1985,7 +1984,7 @@ function render() {
   else if (state.tab === "docs" && showAdminTabs) tabContent = renderDocsTab();
 
   const tabLabels = {
-    games: "Spielplan & Ansetzungen",
+    games: "Schiri-Ansetzungen",
     calendar: "Kalender",
     tasks: "Meine Aufgaben",
     chains: "Weitergabeketten",
@@ -2008,10 +2007,7 @@ function render() {
         </button>
         <div class="brand">
           <div class="brand-crest">${RHTC_CREST_SVG}</div>
-          <div>
-            <h1>RHTC II – Schiedsrichterverwaltung</h1>
-            <span>${esc(currentSeason?.name || "Saison")} &bull; Schwarz-Gold</span>
-          </div>
+          <h1>Schiri-Ansetzungen</h1>
         </div>
       </div>
 
@@ -2054,10 +2050,7 @@ function render() {
       <div class="drawer-header">
         <div class="brand">
           <div class="brand-crest" style="width:36px;height:36px">${RHTC_CREST_SVG}</div>
-          <div>
-            <h2 style="margin:0;font-size:1.05rem;font-weight:800;color:#fff">RHTC Schiri</h2>
-            <span style="font-size:0.75rem;color:var(--gold);font-weight:600">2. Herren &bull; Schwarz-Gold</span>
-          </div>
+          <h2 style="margin:0;font-size:1.05rem;font-weight:800;color:#fff">Schiri-Ansetzungen</h2>
         </div>
         <button class="drawer-close-btn" onclick="closeDrawer()" title="Menü schließen">&times;</button>
       </div>
@@ -2106,7 +2099,7 @@ function render() {
         <nav class="drawer-nav">
           <button class="drawer-nav-item ${state.tab === "games" ? "active" : ""}" onclick="setTab('games')">
             <span class="drawer-nav-icon">🏑</span>
-            <span class="drawer-nav-text">Spielplan &amp; Ansetzungen</span>
+            <span class="drawer-nav-text">Schiri-Ansetzungen</span>
           </button>
           <button class="drawer-nav-item ${state.tab === "calendar" ? "active" : ""}" onclick="setTab('calendar')">
             <span class="drawer-nav-icon">📅</span>

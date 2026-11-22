@@ -1,6 +1,6 @@
 {
-  "name": "RHTC Schiedsrichter",
-  "short_name": "RHTC Schiri",
+  "name": "Schiri-Ansetzungen",
+  "short_name": "Schiri-Ansetzungen",
   "description": "Schiedsrichterverwaltung der 2. Herrenmannschaft des RHTC Hamburg",
   "start_url": "/",
   "display": "standalone",

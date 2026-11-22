@@ -9,14 +9,14 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "RHTC II – Schiedsrichterverwaltung",
+  title: "Schiri-Ansetzungen – RHTC",
   description:
     "Interne Verwaltung der Schiedsrichter-Ansetzungen, Weitergaben, Kasse und Dokumentation der 2. Herrenmannschaft",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "RHTC Schiri",
+    title: "Schiri-Ansetzungen",
   },
   icons: {
     icon: [
@@ -44,7 +44,7 @@ export default function RootLayout({
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-        <meta name="apple-mobile-web-app-title" content="RHTC Schiri" />
+        <meta name="apple-mobile-web-app-title" content="Schiri-Ansetzungen" />
         <link rel="apple-touch-icon" href="/icon-192.png" />
       </head>
       <body className="min-h-screen antialiased">{children}</body>
