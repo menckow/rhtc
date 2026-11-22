@@ -1232,7 +1232,16 @@ function renderChainsTab() {
 
   let filtered = allChains.filter(({ g, ch }) => {
     if (!state.chainShowAllSlots && !hasHandoffEvent(ch)) return false;
-    if (state.chainFilterStatus === "active") {
+    if (state.chainFilterStatus === "mine") {
+      const isMine =
+        ch.current_assignee_id === state.user.id ||
+        ch.pending_assignee_id === state.user.id ||
+        ch.voluntary_requester_id === state.user.id ||
+        (ch.events || []).some(
+          (e) => e.from_user_id === state.user.id || e.to_user_id === state.user.id
+        );
+      if (!isMine) return false;
+    } else if (state.chainFilterStatus === "active") {
       if (ch.status === "CONFIRMED_DEPLOYED") return false;
     } else if (state.chainFilterStatus === "deployed") {
       if (ch.status !== "CONFIRMED_DEPLOYED") return false;
@@ -1431,9 +1440,14 @@ function renderChainsTab() {
     <div class="card" style="padding:12px 14px">
       <div class="filter-bar" style="margin-bottom:10px">
         <button class="filter-pill ${state.chainFilterStatus === "all" ? "active" : ""}" onclick="setChainFilter('all')">Alle Status</button>
+        <button class="filter-pill ${state.chainFilterStatus === "mine" ? "active" : ""}" onclick="setChainFilter('mine')">Meine Ketten</button>
         <button class="filter-pill ${state.chainFilterStatus === "active" ? "active" : ""}" onclick="setChainFilter('active')">Laufend / Offen</button>
         <button class="filter-pill ${state.chainFilterStatus === "deployed" ? "active" : ""}" onclick="setChainFilter('deployed')">Eingesetzt</button>
-        <button class="filter-pill ${state.chainFilterStatus === "open_payment" ? "active" : ""}" onclick="setChainFilter('open_payment')">Offene Zahlungen</button>
+        ${
+          canViewAdminTabs(state.user)
+            ? `<button class="filter-pill ${state.chainFilterStatus === "open_payment" ? "active" : ""}" onclick="setChainFilter('open_payment')">Offene Zahlungen</button>`
+            : ""
+        }
         <button class="filter-pill ${state.chainShowAllSlots ? "active" : ""}" onclick="toggleChainShowAll()">${state.chainShowAllSlots ? "Nur mit Weitergabe" : "Alle Slots anzeigen"}</button>
       </div>
       <div class="form-group" style="margin:0">
@@ -2021,7 +2035,7 @@ function render() {
         `<option value="${s.id}" ${s.id === currentSeason?.id ? "selected" : ""}>${esc(s.name)}${s.is_active ? " (Aktiv)" : ""}</option>`
     )
     .join("");
-  if (!showAdminTabs && !["games", "calendar", "tasks"].includes(state.tab)) {
+  if (!showAdminTabs && !["games", "calendar", "tasks", "chains"].includes(state.tab)) {
     state.tab = "games";
   }
 
@@ -2029,7 +2043,7 @@ function render() {
   if (state.tab === "games") tabContent = renderGamesTab();
   else if (state.tab === "calendar") tabContent = renderCalendarTab();
   else if (state.tab === "tasks") tabContent = renderTasksTab();
-  else if (state.tab === "chains" && showAdminTabs) tabContent = renderChainsTab();
+  else if (state.tab === "chains") tabContent = renderChainsTab();
   else if (state.tab === "players" && showAdminTabs) tabContent = renderPlayersTab();
   else if (state.tab === "treasury" && showAdminTabs) tabContent = renderTreasuryTab();
   else if (state.tab === "docs" && showAdminTabs) tabContent = renderDocsTab();
@@ -2161,15 +2175,15 @@ function render() {
             <span class="drawer-nav-text">Meine Aufgaben</span>
             ${pendingCount > 0 ? `<span class="badge badge-red" style="margin-left:auto">${pendingCount}</span>` : ""}
           </button>
+          <button class="drawer-nav-item ${state.tab === "chains" ? "active" : ""}" onclick="setTab('chains')">
+            <span class="drawer-nav-icon">🔄</span>
+            <span class="drawer-nav-text">Weitergabeketten</span>
+          </button>
 
           ${
             showAdminTabs
               ? `
                 <div class="drawer-section-title" style="margin-top:16px">Verwaltung &amp; Regeln (§§ 1–8)</div>
-                <button class="drawer-nav-item ${state.tab === "chains" ? "active" : ""}" onclick="setTab('chains')">
-                  <span class="drawer-nav-icon">🔄</span>
-                  <span class="drawer-nav-text">Weitergabeketten</span>
-                </button>
                 <button class="drawer-nav-item ${state.tab === "players" ? "active" : ""}" onclick="setTab('players')">
                   <span class="drawer-nav-icon">👥</span>
                   <span class="drawer-nav-text">Schiedsrichterliste (§ 2)</span>
