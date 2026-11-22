@@ -528,21 +528,24 @@ function renderGamesTab() {
         // Primary action determination
         let primaryClick = "";
         let primaryText = "";
-        if (canVolunteerForChain(ch)) {
-          primaryClick = `requestVolunteer(${ch.id})`;
-          primaryText = ch.payout_pool_cents > 0 ? `Übernehmen (+${formatEuro(ch.payout_pool_cents)})` : "Übernehmen";
+        if ((isResponsible || isWart) && ch.status === "VOLUNTARY_REQUESTED") {
+          primaryClick = `decideVolunteer(${ch.id}, 'APPROVE')`;
+          primaryText = "Übernahme bestätigen";
+        } else if (ch.status === "VOLUNTARY_REQUESTED" && ch.voluntary_requester_id === state.user.id) {
+          primaryClick = `toggleSlotDropdown(event, ${ch.id})`;
+          primaryText = "Angefragt (Warten)";
         } else if ((isResponsible || isWart) && isUnconfirmed) {
           primaryClick = `respondHandoff(${ch.id}, 'ACCEPT')`;
           primaryText = "Annehmen";
         } else if ((isResponsible || isWart) && ch.status === "CONFIRMED") {
           primaryClick = `handoffById(${ch.id})`;
           primaryText = "Weiterleiten";
-        } else if ((isResponsible || isWart) && ch.status === "VOLUNTARY_REQUESTED") {
-          primaryClick = `decideVolunteer(${ch.id}, 'APPROVE')`;
-          primaryText = "Übernahme bestätigen";
         } else if (isWart && ch.status === "REPORTED_DEPLOYED") {
           primaryClick = `confirmDeployed(${ch.id})`;
           primaryText = "Einsatz bestätigen";
+        } else if (canVolunteerForChain(ch)) {
+          primaryClick = `requestVolunteer(${ch.id})`;
+          primaryText = ch.payout_pool_cents > 0 ? `Übernehmen (+${formatEuro(ch.payout_pool_cents)})` : "Übernehmen";
         } else if (!assignee && isWart) {
           primaryClick = `openManualAssignModal(${ch.id})`;
           primaryText = "Zuweisen";
@@ -1068,8 +1071,8 @@ function renderTreasuryTab() {
           : `<table class="responsive-table">
               <thead>
                 <tr>
+                  <th>Spieler</th>
                   <th>Datum</th>
-                  <th>Von</th>
                   <th>Betrag</th>
                   <th>Status</th>
                   <th>Härtefall (§ 8)</th>
@@ -1082,9 +1085,10 @@ function renderTreasuryTab() {
                     const due = ev.fee_total_cents - ev.waived_amount_cents;
                     return `
                       <tr>
-                        <td class="cell-main"><strong>${esc(fullName(ev.fromUser))}</strong><div class="player-meta">${formatDate(ev.created_at)}</div></td>
-                        <td data-label="Betrag">${formatEuro(due)} ${ev.waived_amount_cents > 0 ? `<span style="font-size:0.75rem;color:var(--muted)">(Erlass: ${formatEuro(ev.waived_amount_cents)})</span>` : ""}</td>
-                        <td data-label="Status">${esc(ev.payment_status)}</td>
+                        <td class="cell-main" data-label="Spieler"><strong>${esc(fullName(ev.fromUser))}</strong></td>
+                        <td data-label="Datum">${formatDate(ev.created_at)}</td>
+                        <td data-label="Betrag"><strong>${formatEuro(due)}</strong> ${ev.waived_amount_cents > 0 ? `<div style="font-size:0.75rem;color:var(--muted)">(Erlass: ${formatEuro(ev.waived_amount_cents)})</div>` : ""}</td>
+                        <td data-label="Status">${chainPaymentBadge(ev) || esc(ev.payment_status)}</td>
                         <td data-label="Härtefall (§ 8)">
                           ${ev.hardship_status === "NONE" ? "–" : esc(ev.hardship_status)}
                           ${isKassenwart && ev.hardship_reason_confidential ? `<div style="font-size:0.78rem;color:var(--muted);margin-top:2px">Vertraulich: ${esc(ev.hardship_reason_confidential)}</div>` : ""}
@@ -1110,6 +1114,9 @@ function renderTreasuryTab() {
 
     <div class="card" style="overflow-x:auto">
       <h3 style="margin-top:0;font-size:1rem">Auszahlungstöpfe der Weitergabestränge (§ 4 Abs. 3, § 5 Abs. 4)</h3>
+      <p style="font-size:0.82rem;color:var(--muted);margin:-4px 0 12px 0">
+        Die Auszahlung des Topfes erfolgt grundsätzlich erst an denjenigen Schiedsrichter, der das Spiel bestätigt übernommen und auch offiziell gepfiffen hat.
+      </p>
       ${
         payoutChains.length === 0
           ? `<p style="color:var(--muted)">Keine Auszahlungstöpfe vorhanden.</p>`
@@ -1118,22 +1125,49 @@ function renderTreasuryTab() {
               <tbody>
                 ${payoutChains
                   .map(
-                    ({ g, ch }) => `
+                    ({ g, ch }) => {
+                      const isDeployed = ch.status === "CONFIRMED_DEPLOYED" || ch.status === "REPORTED_DEPLOYED";
+                      const isConfirmed = ch.status === "CONFIRMED";
+                      let actualRefHtml = "–";
+
+                      if (isDeployed || isConfirmed) {
+                        const ref = ch.currentAssignee;
+                        const name = ref ? fullName(ref) : "–";
+                        actualRefHtml = `<strong>${esc(name)}</strong> ${isDeployed ? `<span class="badge badge-green" style="font-size:0.7rem">Gepfiffen</span>` : `<span class="badge badge-blue" style="font-size:0.7rem">Bestätigt</span>`}`;
+                      } else if (ch.status === "VOLUNTARY_REQUESTED") {
+                        const vol = ch.voluntaryRequester;
+                        const target = ch.pendingAssignee || ch.currentAssignee;
+                        actualRefHtml = `<strong>${esc(fullName(vol || target))}</strong> <span class="badge badge-amber" style="font-size:0.7rem">Übernahme angefragt</span>${target && vol ? `<div style="font-size:0.74rem;color:var(--muted)">Zustimmung von ${esc(fullName(target))} ausstehend</div>` : ""}`;
+                      } else if (ch.status === "PENDING_HANDOFF") {
+                        const target = ch.pendingAssignee || ch.currentAssignee;
+                        actualRefHtml = `<strong>${esc(fullName(target))}</strong> <span class="badge badge-amber" style="font-size:0.7rem">Vorgeschlagen (Offen)</span>`;
+                      } else {
+                        const ref = ch.currentAssignee;
+                        actualRefHtml = ref ? `<strong>${esc(fullName(ref))}</strong>` : `<span style="color:var(--muted)">Noch unbesetzt</span>`;
+                      }
+
+                      const canSettle = isKassenwart && ch.status === "CONFIRMED_DEPLOYED" && !ch.payout_settled;
+
+                      return `
                   <tr>
-                    <td class="cell-main"><strong>${esc(g.title)} (Slot ${ch.slot_number})</strong> <span class="badge badge-gray">${esc(ch.ref_code || "–")}</span></td>
-                    <td data-label="Schiedsrichter">${esc(fullName(ch.currentAssignee))}</td>
+                    <td data-label="ID"><span class="badge badge-gray">${esc(ch.ref_code || `SR-00${ch.slot_number}`)}</span></td>
+                    <td class="cell-main" data-label="Spiel"><strong>${esc(g.title)}</strong><div class="player-meta">${formatDate(g.kickoff_at)} &bull; Slot ${ch.slot_number}</div></td>
+                    <td data-label="Schiedsrichter">${actualRefHtml}</td>
                     <td data-label="Status">${statusBadge(ch.status)}</td>
                     <td data-label="Betrag"><strong>${formatEuro(ch.payout_pool_cents)}</strong></td>
                     <td data-label="Auszahlung">
                       ${
                         ch.payout_settled
-                          ? `<span class="badge badge-green">Ausgezahlt</span>`
-                          : isKassenwart && ch.status === "CONFIRMED_DEPLOYED"
-                          ? `<button class="btn btn-primary btn-sm" onclick="settlePayout(${ch.id})">Auszahlen</button>`
-                          : `<span class="badge badge-gray">Offen (nach Einsatz)</span>`
+                          ? `<span class="badge badge-green">Ausgezahlt an ${esc(fullName(ch.currentAssignee))}</span>`
+                          : canSettle
+                          ? `<button class="btn btn-primary btn-sm" onclick="settlePayout(${ch.id})">An ${esc(fullName(ch.currentAssignee))} auszahlen</button>`
+                          : ch.status === "CONFIRMED_DEPLOYED"
+                          ? `<span class="badge badge-blue">Bereit (${esc(fullName(ch.currentAssignee))})</span>`
+                          : `<span class="badge badge-gray" title="Auszahlung erfolgt erst an denjenigen, der das Spiel bestätigt übernommen und auch gepfiffen hat (§ 4 Abs. 3, § 5 Abs. 4)">Offen (nach Einsatz)</span>`
                       }
                     </td>
-                  </tr>`
+                  </tr>`;
+                    }
                   )
                   .join("")}
               </tbody>
@@ -1258,13 +1292,15 @@ function renderChainsTab() {
         ev.event_type === "CONFIRMED_DEPLOYED" ||
         ev.event_type === "PAYOUT_SETTLED"
       ) {
+        const u = ev.fromUser || ev.toUser;
+        const uName = u ? fullName(u) : "";
         const label =
           ev.event_type === "REPORTED_DEPLOYED"
-            ? "Einsatz gemeldet"
+            ? `Einsatz gemeldet${uName ? ` (${uName})` : ""}`
             : ev.event_type === "CONFIRMED_DEPLOYED"
-            ? "Einsatz bestätigt"
-            : "Topf ausgezahlt";
-        milestones.push({ label, at: ev.created_at, user: ev.fromUser || ev.toUser });
+            ? `Einsatz bestätigt${uName ? ` (${uName})` : ""}`
+            : `Topf ausgezahlt${uName ? ` an ${uName}` : ""}`;
+        milestones.push({ label, at: ev.created_at });
         continue;
       }
 
@@ -1276,6 +1312,7 @@ function renderChainsTab() {
               <span class="chain-edge-arrow-v">&darr;</span>
               <span>Angenommen</span>
             </div>
+            <div>${ev.toUser ? `<strong>${esc(fullName(ev.toUser))}</strong> hat übernommen` : "Ansetzung übernommen"}</div>
             <div style="color:var(--muted);font-size:0.72rem">${formatDate(ev.created_at)}</div>
           </div>
         `);
@@ -1283,6 +1320,12 @@ function renderChainsTab() {
       }
 
       if (ev.event_type === "VOLUNTEER_REQUEST") {
+        let volunteerName = ev.toUser ? fullName(ev.toUser) : "";
+        if (ev.public_note && ev.public_note.includes("durch ")) {
+          volunteerName = ev.public_note.split("durch ")[1] || volunteerName;
+        } else if (!volunteerName && ev.fromUser) {
+          volunteerName = fullName(ev.fromUser);
+        }
         parts.push(`
           <div class="chain-edge">
             <div class="chain-edge-head">
@@ -1290,7 +1333,7 @@ function renderChainsTab() {
               <span class="chain-edge-arrow-v">&darr;</span>
               <span>Übernahme-Anfrage</span>
             </div>
-            <div>${ev.fromUser ? esc(fullName(ev.fromUser)) : "–"} möchte übernehmen</div>
+            <div><strong>${esc(volunteerName || "Jemand")}</strong> möchte übernehmen</div>
             <div style="color:var(--muted);font-size:0.72rem">${formatDate(ev.created_at)}</div>
           </div>
         `);
@@ -1420,7 +1463,15 @@ function renderChainsTab() {
                     <div class="chain-money-summary">
                       ${statusBadge(ch.status)}
                       ${teamPotTotal > 0 ? `<span class="badge badge-gray">Kasse: ${formatEuro(teamPotTotal)}</span>` : ""}
-                      ${ch.payout_pool_cents > 0 ? `<span class="badge badge-amber">Schiri-Topf: ${formatEuro(ch.payout_pool_cents)}${ch.payout_settled ? " (Ausgezahlt)" : ""}</span>` : ""}
+                      ${
+                        ch.payout_pool_cents > 0
+                          ? ch.payout_settled
+                            ? `<span class="badge badge-green">Topf: ${formatEuro(ch.payout_pool_cents)} (Ausgezahlt an ${esc(fullName(ch.currentAssignee))})</span>`
+                            : ch.status === "CONFIRMED_DEPLOYED"
+                            ? `<span class="badge badge-blue">Auszahlung: ${formatEuro(ch.payout_pool_cents)} bereit (${esc(fullName(ch.currentAssignee))})</span>`
+                            : `<span class="badge badge-amber" title="Auszahlung geht immer an denjenigen, der das Spiel bestätigt übernommen und gepfiffen hat">Topf: +${formatEuro(ch.payout_pool_cents)} (nach Einsatz)</span>`
+                          : ""
+                      }
                     </div>
                   </div>
                   ${renderChainFlow(ch)}

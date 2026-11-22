@@ -211,12 +211,22 @@ export async function GET(
         .filter((e) => e.payment_status === "PAID")
         .reduce((acc, e) => acc + (e.fee_total_cents - e.waived_amount_cents), 0);
 
+      const earnedPayoutCents = chains
+        .filter(
+          (c) =>
+            c.current_assignee_id === p.id &&
+            Boolean(c.payout_settled) &&
+            c.payout_pool_cents > 0
+        )
+        .reduce((acc, c) => acc + c.payout_pool_cents, 0);
+
       return {
         ...p,
         activeAssigned,
         deployedCount,
         openPaymentCents,
         paidCents,
+        earnedPayoutCents,
       };
     });
 
@@ -685,12 +695,11 @@ export async function POST(
       : chain.current_assignee_id;
     const isAuthorized =
       responsibleUserId === user.id ||
-      chain.current_assignee_id === user.id ||
       user.role === "SCHIEDSRICHTERWART" ||
       user.role === "ADMIN";
     if (!isAuthorized) {
       return NextResponse.json(
-        { error: "Nur die angesetzte/vorgeschlagene Person oder der Schiedsrichterwart darf weitergeben." },
+        { error: "Nur die aktuell angesetzte/vorgeschlagene Person oder der Schiedsrichterwart darf weitergeben." },
         { status: 403 }
       );
     }
@@ -769,7 +778,7 @@ export async function POST(
 
     await repo.chains.update(chainId, {
       status: "PENDING_HANDOFF",
-      current_assignee_id: isPendingMode ? (chain.current_assignee_id || fromUser.id) : fromUser.id,
+      current_assignee_id: fromUser.id,
       pending_assignee_id: nextPlayer.id,
       voluntary_requester_id: null,
       payout_pool_cents: chain.payout_pool_cents + payoutPool,
@@ -838,14 +847,12 @@ export async function POST(
 
     const isAuthorized =
       targetUserId === user.id ||
-      chain.current_assignee_id === user.id ||
-      chain.pending_assignee_id === user.id ||
       user.role === "SCHIEDSRICHTERWART" ||
       user.role === "ADMIN";
 
     if (!isAuthorized) {
       return NextResponse.json(
-        { error: "Nur die zugewiesene Person oder der Schiedsrichterwart darf annehmen." },
+        { error: "Nur die vorgeschlagene Person oder der Schiedsrichterwart darf die Ansetzung annehmen." },
         { status: 403 }
       );
     }
@@ -859,6 +866,7 @@ export async function POST(
       await repo.chains.update(chainId, {
         current_assignee_id: acceptedUser.id,
         pending_assignee_id: null,
+        voluntary_requester_id: null,
         status: "CONFIRMED",
       });
       await repo.events.create({
@@ -924,7 +932,8 @@ export async function POST(
     if (!chain) {
       return NextResponse.json({ error: "Slot nicht gefunden." }, { status: 404 });
     }
-    if (chain.current_assignee_id === user.id) {
+    const responsibleUserId = chain.pending_assignee_id ?? chain.current_assignee_id;
+    if (responsibleUserId === user.id) {
       return NextResponse.json({ error: "Du bist für dieses Spiel bereits angesetzt." }, { status: 400 });
     }
     await repo.chains.update(chainId, {
@@ -935,12 +944,12 @@ export async function POST(
       chain_id: chainId,
       game_id: chain.game_id,
       event_type: "VOLUNTEER_REQUEST",
-      from_user_id: chain.current_assignee_id,
-      to_user_id: user.id,
+      from_user_id: user.id,
+      to_user_id: responsibleUserId,
       public_note: `Freiwillige Übernahme angefragt durch ${user.first_name} ${user.last_name}`,
     });
     const game = (await repo.games.findById(chain.game_id))!;
-    const fromUser = await repo.users.findById(chain.current_assignee_id!);
+    const fromUser = await repo.users.findById(responsibleUserId!);
     const chatMessage = buildGroupChatMessage({
       type: "VOLUNTARY_REQUEST",
       gameTitle: game.title,
@@ -964,11 +973,10 @@ export async function POST(
     const responsibleUserId = chain.pending_assignee_id ?? chain.current_assignee_id;
     const isAuthorized =
       responsibleUserId === user.id ||
-      chain.current_assignee_id === user.id ||
       user.role === "SCHIEDSRICHTERWART" ||
       user.role === "ADMIN";
     if (!isAuthorized) {
-      return NextResponse.json({ error: "Nur der aktuell zugewiesene Schiedsrichter entscheidet." }, { status: 403 });
+      return NextResponse.json({ error: "Nur die zuletzt vorgeschlagene Person oder der Schiedsrichterwart darf über die Übernahme entscheiden." }, { status: 403 });
     }
     const action = String(body.action || (body.approved ? "APPROVE" : "REJECT")).toUpperCase();
     const volunteerId = chain.voluntary_requester_id;
@@ -1206,6 +1214,12 @@ export async function POST(
     const chain = await repo.chains.findById(chainId);
     if (!chain) {
       return NextResponse.json({ error: "Slot nicht gefunden." }, { status: 404 });
+    }
+    if (chain.status !== "CONFIRMED_DEPLOYED") {
+      return NextResponse.json(
+        { error: "Auszahlung kann erst erfolgen, nachdem das Spiel gepfiffen und der Einsatz offiziell bestätigt wurde." },
+        { status: 400 }
+      );
     }
     await repo.chains.update(chainId, { payout_settled: 1 });
     await repo.events.create({
