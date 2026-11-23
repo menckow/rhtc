@@ -120,14 +120,15 @@ export async function GET(
       repo.seasons.listAll(),
       repo.users.listAll(),
     ]);
-    const reqSeasonId = url.searchParams.get("seasonId")
-      ? Number(url.searchParams.get("seasonId"))
-      : null;
-    const season =
-      (reqSeasonId ? allSeasons.find((s) => s.id === reqSeasonId) : undefined) ??
-      allSeasons.find((s) => s.is_active) ??
-      allSeasons[0] ??
-      null;
+    const seasonParam = url.searchParams.get("seasonId");
+    const isAllTime = seasonParam === "all";
+    const reqSeasonId = seasonParam && !isAllTime ? Number(seasonParam) : null;
+    const season = isAllTime
+      ? { id: "all", name: "Ewige Tabelle (Alle Saisons)", is_active: 0 } as any
+      : (reqSeasonId ? allSeasons.find((s) => s.id === reqSeasonId) : undefined) ??
+        allSeasons.find((s) => s.is_active) ??
+        allSeasons[0] ??
+        null;
 
     if (!season) {
       return NextResponse.json({
@@ -157,7 +158,7 @@ export async function GET(
     );
 
     const [seasonGames, rawOverrides] = await Promise.all([
-      repo.games.listBySeason(season.id),
+      isAllTime ? repo.games.listAll() : repo.games.listBySeason(Number(season.id)),
       repo.settings.get("deployed_count_overrides"),
     ]);
     let deployedOverrides: Record<string, number> = {};
@@ -227,10 +228,23 @@ export async function GET(
         .filter(
           (c) =>
             c.current_assignee_id === p.id &&
-            Boolean(c.payout_settled) &&
+            (c.status === "CONFIRMED_DEPLOYED" || Boolean(c.payout_settled)) &&
             c.payout_pool_cents > 0
         )
         .reduce((acc, c) => acc + c.payout_pool_cents, 0);
+
+      const takeoverCount = sanitizedEvents.filter(
+        (e) =>
+          e.to_user_id === p.id &&
+          (e.event_type === "HANDOFF_ACCEPTED" || e.event_type === "VOLUNTEER_APPROVED") &&
+          e.from_user_id !== p.id
+      ).length;
+
+      const handoffCount = sanitizedEvents.filter(
+        (e) =>
+          e.from_user_id === p.id &&
+          ["REGULAR_HANDOFF", "HARDSHIP", "VOLUNTEER_EXEMPT", "SQUAD_NOMINATION", "VOLUNTEER_AUTO_FORWARD"].includes(e.event_type)
+      ).length;
 
       return {
         ...p,
@@ -240,6 +254,8 @@ export async function GET(
         openPaymentCents,
         paidCents,
         earnedPayoutCents,
+        takeoverCount,
+        handoffCount,
       };
     });
 

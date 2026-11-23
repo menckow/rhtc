@@ -313,10 +313,23 @@ const server = http.createServer(async (req, res) => {
             .filter(
               (c) =>
                 c.current_assignee_id === p.id &&
-                c.status === "CONFIRMED_DEPLOYED" &&
+                (c.status === "CONFIRMED_DEPLOYED" || Boolean(c.payout_settled)) &&
                 c.payout_pool_cents > 0
             )
             .reduce((acc, c) => acc + c.payout_pool_cents, 0);
+
+          const takeoverCount = sanitizedEvents.filter(
+            (e) =>
+              e.to_user_id === p.id &&
+              (e.event_type === "HANDOFF_ACCEPTED" || e.event_type === "VOLUNTEER_APPROVED") &&
+              e.from_user_id !== p.id
+          ).length;
+
+          const handoffCount = sanitizedEvents.filter(
+            (e) =>
+              e.from_user_id === p.id &&
+              ["REGULAR_HANDOFF", "HARDSHIP", "VOLUNTEER_EXEMPT", "SQUAD_NOMINATION", "VOLUNTEER_AUTO_FORWARD"].includes(e.event_type)
+          ).length;
 
           return {
             ...p,
@@ -326,6 +339,8 @@ const server = http.createServer(async (req, res) => {
             openPaymentCents,
             paidCents,
             earnedPayoutCents,
+            takeoverCount,
+            handoffCount,
           };
         });
 

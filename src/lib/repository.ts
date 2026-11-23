@@ -390,6 +390,20 @@ export const repo = {
   },
 
   games: {
+    async listAll(): Promise<GameRow[]> {
+      if (supabase) {
+        const { data, error } = await supabase
+          .from("games")
+          .select("*")
+          .order("kickoff_at", { ascending: true });
+        if (error || !data) return [];
+        return data.map(mapGameFromPg);
+      }
+      return sqlite
+        .prepare("SELECT * FROM games ORDER BY kickoff_at ASC")
+        .all() as unknown as GameRow[];
+    },
+
     async listBySeason(seasonId: number): Promise<GameRow[]> {
       if (supabase) {
         const { data, error } = await supabase

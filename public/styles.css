@@ -1686,3 +1686,236 @@ th { font-size: 0.76rem; color: var(--muted); text-transform: uppercase; letter-
     grid-template-columns: 1fr;
   }
 }
+
+/* --- GAMIFICATION & STATS VIEW --- */
+.stats-header-wrap {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.stats-time-toggle {
+  display: inline-flex;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 3px;
+  gap: 4px;
+}
+
+.stats-toggle-btn {
+  padding: 6px 14px;
+  font-size: 0.84rem;
+  font-weight: 600;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.stats-toggle-btn.active {
+  background: #111111;
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.podium-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  position: relative;
+  overflow: hidden;
+}
+
+.podium-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 14px;
+}
+
+.podium-card-icon {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.podium-card-title {
+  margin: 0;
+  font-size: 1.02rem;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.podium-card-sub {
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin-top: 1px;
+}
+
+.podium-champion {
+  background: linear-gradient(135deg, #fffbf0 0%, #fef7e0 100%);
+  border: 1.5px solid var(--gold);
+  border-radius: 8px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  box-shadow: 0 2px 8px rgba(212, 160, 23, 0.15);
+}
+
+.champion-crown {
+  font-size: 1.8rem;
+  line-height: 1;
+  filter: drop-shadow(0 2px 4px rgba(212,160,23,0.3));
+}
+
+.champion-info {
+  flex: 1;
+  overflow: hidden;
+}
+
+.champion-name {
+  font-weight: 800;
+  font-size: 0.95rem;
+  color: #111;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.champion-badge {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--gold-dark);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-top: 2px;
+}
+
+.champion-val {
+  font-size: 1.15rem;
+  font-weight: 900;
+  color: #111;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.podium-runners {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+}
+
+.runner-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  background: #faf9f5;
+  font-size: 0.85rem;
+}
+
+.runner-rank {
+  font-size: 0.95rem;
+  width: 22px;
+  text-align: center;
+  font-weight: 700;
+}
+
+.runner-name {
+  flex: 1;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.runner-val {
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.stats-row-current-user {
+  background: #fefcf3 !important;
+  font-weight: 700;
+  border-left: 3px solid var(--gold);
+}
+
+.stats-badge-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.72rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: 4px;
+  vertical-align: middle;
+  font-weight: 700;
+}
+
+.stats-badge-gold {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fcd34d;
+}
+
+.stats-badge-blue {
+  background: #e0f2fe;
+  color: #0369a1;
+  border: 1px solid #bae6fd;
+}
+
+.stats-badge-green {
+  background: #dcfce7;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+}
+
+.stats-badge-purple {
+  background: #f3e8ff;
+  color: #7e22ce;
+  border: 1px solid #e9d5ff;
+}
+
+@media (max-width: 640px) {
+  .stats-header-wrap {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .stats-time-toggle {
+    width: 100%;
+    display: flex;
+  }
+  .stats-toggle-btn {
+    flex: 1;
+    text-align: center;
+    padding: 8px 6px;
+    font-size: 0.8rem;
+  }
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+}

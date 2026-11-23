@@ -91,7 +91,17 @@ Das Navigationsmenü öffnet sich mobil und auf dem PC über den Button **`☰ M
 - Transparente Anzeige von Gebühren (15 €), Kassenanteil (5 €) und Schiri-Topf (10 € je Weitergabe).
 - *Datenschutz:* Vertrauliche Härtefallbegründungen sind für normale Spieler ausgeblendet.
 
-### 5. 👥 Schiedsrichterliste (§ 2) *(Schiriwart & Admin)*
+### 5. 🏆 Statistiken & Rangliste (Gamification)
+- **Podium-Ranglisten (🥇 🥈 🥉 & Top 5):**
+  - **🏆 Einsatzkönige:** Meiste tatsächlich geleistete Schiri-Einsätze.
+  - **💰 Topfjäger:** Höchste Gesamtsumme an verdienten Prämien aus Weitergabe-Töpfen.
+  - **🎰 Höchste Töpfe:** Die Jackpot-Spiele der Saison mit den höchsten Einzelprämien.
+  - **🛡️ Team-Retter:** Die Spieler, die am häufigsten für verhinderte Kameraden eingesprungen sind.
+  - **🏃 Staffelläufer:** Wer hat am häufigsten eine Ansetzung weitergegeben.
+- **Umschalter Saison / Ewige Tabelle:** Ermöglicht den Vergleich innerhalb der aktuellen Saison oder über alle bisherigen Saisons hinweg.
+- **Vollständige Mannschaftstabelle:** Durchsuchbar und nach jeder Kennzahl sortierbar, mit optischer Hervorhebung des eigenen Profils („Du“) und Vergabe der Gamification-Badges.
+
+### 6. 👥 Schiedsrichterliste (§ 2) *(Schiriwart & Admin)*
 - Komplette Mannschaftsliste mit Einsatzzählern, aktiven Ansetzungen, Offenen Gebühren und Ehrenamts-Status.
 - **Bearbeiten-Modal:** Administratoren und Schiedsrichterwarte können bei jedem Spieler:
   - Vor- und Nachname, E-Mail und Mobilnummer bearbeiten

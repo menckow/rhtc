@@ -2,7 +2,7 @@ const state = {
   user: null,
   data: null,
   selectedSeasonId: null,
-  tab: "games", // games | calendar | tasks | chains | players | treasury | docs
+  tab: "games", // games | calendar | tasks | chains | stats | players | treasury | docs
   calendarYear: new Date().getFullYear(),
   calendarMonth: new Date().getMonth(),
   showPastDeployed: false,
@@ -10,6 +10,8 @@ const state = {
   chainFilterStatus: "all", // all | active | deployed | open_payment
   chainShowAllSlots: false,
   chainSearch: "",
+  statsSort: "deployed", // deployed | earned | takeovers | handoffs
+  statsSearch: "",
   selectedPlayerIds: [],
   modal: null,
   error: null,
@@ -1534,6 +1536,330 @@ function renderDocsTab() {
   `;
 }
 
+function renderPodiumCard({ icon, title, subtitle, badgeName, items, formatVal, isJackpot }) {
+  if (!items || items.length === 0) {
+    return `
+      <div class="podium-card">
+        <div class="podium-card-header">
+          <span class="podium-card-icon">${icon}</span>
+          <div>
+            <h3 class="podium-card-title">${title}</h3>
+            <div class="podium-card-sub">${subtitle}</div>
+          </div>
+        </div>
+        <div style="padding:28px 12px;text-align:center;color:var(--muted);font-size:0.85rem">
+          Noch keine Einträge in dieser Kategorie erfasst.
+        </div>
+      </div>
+    `;
+  }
+
+  const champ = items[0];
+  const runners = items.slice(1);
+
+  const champName = isJackpot
+    ? `${champ.g.title} (${champ.ch.ref_code || `Slot ${champ.ch.slot_number}`})`
+    : `${champ.last_name}, ${champ.first_name}`;
+  const champVal = isJackpot
+    ? formatEuro(champ.ch.payout_pool_cents)
+    : formatVal(champ);
+  const champSub = isJackpot
+    ? (champ.ch.currentAssignee ? `Gepfiffen: ${champ.ch.currentAssignee.last_name}, ${champ.ch.currentAssignee.first_name}` : "Status: Offen")
+    : badgeName;
+
+  let runnersHtml = "";
+  if (runners.length > 0) {
+    runnersHtml = `
+      <div class="podium-runners">
+        ${runners
+          .map((item, idx) => {
+            const rank = idx + 2;
+            const rankIcon = rank === 2 ? "🥈" : rank === 3 ? "🥉" : `#${rank}`;
+            const name = isJackpot
+              ? `${item.g.title} (${item.ch.ref_code || `Slot ${item.ch.slot_number}`})`
+              : `${item.last_name}, ${item.first_name}`;
+            const val = isJackpot
+              ? formatEuro(item.ch.payout_pool_cents)
+              : formatVal(item);
+            return `
+              <div class="runner-row">
+                <span class="runner-rank">${rankIcon}</span>
+                <span class="runner-name" title="${esc(name)}">${esc(name)}</span>
+                <span class="runner-val">${esc(val)}</span>
+              </div>
+            `;
+          })
+          .join("")}
+      </div>
+    `;
+  }
+
+  return `
+    <div class="podium-card">
+      <div class="podium-card-header">
+        <span class="podium-card-icon">${icon}</span>
+        <div>
+          <h3 class="podium-card-title">${title}</h3>
+          <div class="podium-card-sub">${subtitle}</div>
+        </div>
+      </div>
+      <div class="podium-champion">
+        <div class="champion-crown">🥇</div>
+        <div class="champion-info">
+          <div class="champion-name" title="${esc(champName)}">${esc(champName)}</div>
+          <div class="champion-badge">${esc(champSub)}</div>
+        </div>
+        <div class="champion-val">${esc(champVal)}</div>
+      </div>
+      ${runnersHtml}
+    </div>
+  `;
+}
+
+function renderStatsTab() {
+  const currentSeason = state.data.season;
+  const isAllTime = currentSeason?.id === "all";
+  const players = state.data.players || [];
+  const games = state.data.games || [];
+  const activeSeason =
+    state.data.seasons?.find((s) => s.is_active) || state.data.seasons?.[0];
+
+  // 1. Top Einsatzkönige
+  const byDeployed = [...players]
+    .filter((p) => p.deployedCount > 0)
+    .sort((a, b) => b.deployedCount - a.deployedCount || a.last_name.localeCompare(b.last_name, "de"));
+  const topDeployed = byDeployed.slice(0, 5);
+
+  // 2. Top Topfjäger
+  const byEarned = [...players]
+    .filter((p) => (p.earnedPayoutCents || 0) > 0)
+    .sort((a, b) => b.earnedPayoutCents - a.earnedPayoutCents || a.last_name.localeCompare(b.last_name, "de"));
+  const topEarned = byEarned.slice(0, 5);
+
+  // 3. Höchste Töpfe (Jackpot-Spiele)
+  const poolChains = [];
+  for (const g of games) {
+    for (const ch of g.chains || []) {
+      if (ch.payout_pool_cents > 0) {
+        poolChains.push({ g, ch });
+      }
+    }
+  }
+  poolChains.sort(
+    (a, b) =>
+      b.ch.payout_pool_cents - a.ch.payout_pool_cents ||
+      new Date(b.g.kickoff_at).getTime() - new Date(a.g.kickoff_at).getTime()
+  );
+  const topPools = poolChains.slice(0, 5);
+
+  // 4. Team-Retter (Meiste Übernahmen)
+  const byTakeovers = [...players]
+    .filter((p) => (p.takeoverCount || 0) > 0)
+    .sort((a, b) => (b.takeoverCount || 0) - (a.takeoverCount || 0) || a.last_name.localeCompare(b.last_name, "de"));
+  const topTakeovers = byTakeovers.slice(0, 5);
+
+  // 5. Staffelläufer (Meiste Weitergaben)
+  const byHandoffs = [...players]
+    .filter((p) => (p.handoffCount || 0) > 0)
+    .sort((a, b) => (b.handoffCount || 0) - (a.handoffCount || 0) || a.last_name.localeCompare(b.last_name, "de"));
+  const topHandoffs = byHandoffs.slice(0, 5);
+
+  // Spitzenreiter für Badges
+  const topDeployedId = topDeployed[0] ? topDeployed[0].id : null;
+  const topEarnedId = topEarned[0] ? topEarned[0].id : null;
+  const topTakeoverId = topTakeovers[0] ? topTakeovers[0].id : null;
+  const topHandoffId = topHandoffs[0] ? topHandoffs[0].id : null;
+
+  // Filter & Sortierung für Gesamt-Tabelle
+  let filteredPlayers = [...players];
+  if (state.statsSearch && state.statsSearch.trim()) {
+    const q = state.statsSearch.trim().toLowerCase();
+    filteredPlayers = filteredPlayers.filter(
+      (p) =>
+        `${p.first_name} ${p.last_name}`.toLowerCase().includes(q) ||
+        p.email.toLowerCase().includes(q)
+    );
+  }
+
+  const sortMode = state.statsSort || "deployed";
+  filteredPlayers.sort((a, b) => {
+    if (sortMode === "earned") {
+      return (b.earnedPayoutCents || 0) - (a.earnedPayoutCents || 0) || b.deployedCount - a.deployedCount;
+    } else if (sortMode === "takeovers") {
+      return (b.takeoverCount || 0) - (a.takeoverCount || 0) || b.deployedCount - a.deployedCount;
+    } else if (sortMode === "handoffs") {
+      return (b.handoffCount || 0) - (a.handoffCount || 0) || b.deployedCount - a.deployedCount;
+    } else {
+      return b.deployedCount - a.deployedCount || (b.earnedPayoutCents || 0) - (a.earnedPayoutCents || 0);
+    }
+  });
+
+  const tableRows =
+    filteredPlayers.length === 0
+      ? `<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:24px">Keine Spieler gefunden.</td></tr>`
+      : filteredPlayers
+          .map((p, idx) => {
+            const isMe = p.id === state.user.id;
+            let badgesHtml = "";
+            if (p.id === topDeployedId)
+              badgesHtml += `<span class="stats-badge-tag stats-badge-gold" title="Meiste gepfiffene Spiele">🏆 Einsatzkönig</span>`;
+            if (p.id === topEarnedId)
+              badgesHtml += `<span class="stats-badge-tag stats-badge-green" title="Höchster Prämien-Verdienst">💰 Cash-King</span>`;
+            if (p.id === topTakeoverId)
+              badgesHtml += `<span class="stats-badge-tag stats-badge-blue" title="Meiste Einsätze gerettet">🛡️ Retter</span>`;
+            if (p.id === topHandoffId)
+              badgesHtml += `<span class="stats-badge-tag stats-badge-purple" title="Meiste Ansetzungen weitergegeben">🏃 Staffel</span>`;
+
+            return `
+              <tr class="${isMe ? "stats-row-current-user" : ""}">
+                <td data-label="#"><strong>${idx + 1}</strong></td>
+                <td data-label="Spieler" class="cell-main">
+                  <div>
+                    <strong>${esc(p.last_name)}, ${esc(p.first_name)}</strong>
+                    ${isMe ? `<span class="badge badge-gold" style="font-size:0.7rem;margin-left:4px">Du</span>` : ""}
+                    ${badgesHtml}
+                  </div>
+                  <div class="player-meta">${roleLabel(p.role)} &bull; ${esc(p.email)}</div>
+                </td>
+                <td data-label="Gepfiffen">
+                  <strong>${p.deployedCount}</strong> ${p.deployedCount === 1 ? "Spiel" : "Spiele"}
+                  ${p.isDeployedOverridden ? `<span class="badge badge-gray" style="font-size:0.68rem" title="Manuell angepasst">korr.</span>` : ""}
+                </td>
+                <td data-label="Topf-Verdienst" style="color:var(--success);font-weight:700">
+                  ${p.earnedPayoutCents > 0 ? formatEuro(p.earnedPayoutCents) : "0,00 €"}
+                </td>
+                <td data-label="Übernahmen">
+                  ${p.takeoverCount > 0 ? `<strong style="color:var(--info)">${p.takeoverCount}×</strong> gerettet` : `<span style="color:var(--muted)">0</span>`}
+                </td>
+                <td data-label="Weitergaben">
+                  ${p.handoffCount > 0 ? `<span style="color:var(--warn);font-weight:600">${p.handoffCount}×</span> weitergegeben` : `<span style="color:var(--muted)">0</span>`}
+                </td>
+                <td data-label="Offen">
+                  ${p.openPaymentCents > 0 ? `<strong style="color:var(--danger)">${formatEuro(p.openPaymentCents)}</strong>` : "0,00 €"}
+                </td>
+              </tr>
+            `;
+          })
+          .join("");
+
+  return `
+    <div class="stats-header-wrap">
+      <div>
+        <h2 style="margin:0;font-size:1.15rem">🏆 Hall of Fame &amp; Gamification-Rangliste</h2>
+        <div style="font-size:0.85rem;color:var(--muted);margin-top:2px">
+          ${
+            isAllTime
+              ? "Ewige Bestenliste über alle Saisons hinweg"
+              : `Statistiken der Saison: <strong>${esc(currentSeason?.name || "Aktuell")}</strong>`
+          }
+        </div>
+      </div>
+      <div class="stats-time-toggle">
+        <button class="stats-toggle-btn ${!isAllTime ? "active" : ""}" onclick="changeSeason(${activeSeason ? activeSeason.id : currentSeason?.id || 1})">
+          Aktuelle Saison
+        </button>
+        <button class="stats-toggle-btn ${isAllTime ? "active" : ""}" onclick="changeSeason('all')">
+          🏆 Ewige Tabelle
+        </button>
+      </div>
+    </div>
+
+    <div class="stats-grid">
+      ${renderPodiumCard({
+        icon: "🏆",
+        title: "Einsatzkönige",
+        subtitle: "Meiste gepfiffene Spiele",
+        badgeName: "Einsatzkönig",
+        items: topDeployed,
+        formatVal: (p) => `${p.deployedCount} ${p.deployedCount === 1 ? "Spiel" : "Spiele"}`,
+        isJackpot: false,
+      })}
+
+      ${renderPodiumCard({
+        icon: "💰",
+        title: "Topfjäger",
+        subtitle: "Höchste verdiente Prämien",
+        badgeName: "Cash-King",
+        items: topEarned,
+        formatVal: (p) => formatEuro(p.earnedPayoutCents),
+        isJackpot: false,
+      })}
+
+      ${renderPodiumCard({
+        icon: "🎰",
+        title: "Höchste Töpfe",
+        subtitle: "Jackpot-Spiele der Saison",
+        badgeName: "Top-Jackpot",
+        items: topPools,
+        formatVal: () => "",
+        isJackpot: true,
+      })}
+
+      ${renderPodiumCard({
+        icon: "🛡️",
+        title: "Team-Retter",
+        subtitle: "Meiste Übernahmen für andere",
+        badgeName: "Team-Retter",
+        items: topTakeovers,
+        formatVal: (p) => `${p.takeoverCount}× gerettet`,
+        isJackpot: false,
+      })}
+
+      ${renderPodiumCard({
+        icon: "🏃",
+        title: "Staffelläufer",
+        subtitle: "Meiste Weiterleitungen",
+        badgeName: "Staffelläufer",
+        items: topHandoffs,
+        formatVal: (p) => `${p.handoffCount}× weitergegeben`,
+        isJackpot: false,
+      })}
+    </div>
+
+    <div class="card" style="margin-top:20px;overflow-x:auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:10px">
+        <h3 style="margin:0;font-size:1.05rem">Vollständige Mannschafts-Tabelle</h3>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <input
+            type="text"
+            id="stats-search-input"
+            placeholder="Spieler suchen..."
+            value="${esc(state.statsSearch || "")}"
+            oninput="setStatsSearch(this.value, this.selectionStart)"
+            style="width:180px;padding:6px 10px;font-size:0.84rem;border:1px solid #d1ccc0;border-radius:6px"
+          />
+          <select
+            onchange="setStatsSort(this.value)"
+            style="padding:6px 10px;font-size:0.84rem;border:1px solid #d1ccc0;border-radius:6px"
+          >
+            <option value="deployed" ${sortMode === "deployed" ? "selected" : ""}>Sortierung: Meiste Einsätze</option>
+            <option value="earned" ${sortMode === "earned" ? "selected" : ""}>Sortierung: Meiste Prämien (€)</option>
+            <option value="takeovers" ${sortMode === "takeovers" ? "selected" : ""}>Sortierung: Meiste Übernahmen</option>
+            <option value="handoffs" ${sortMode === "handoffs" ? "selected" : ""}>Sortierung: Meiste Weitergaben</option>
+          </select>
+        </div>
+      </div>
+
+      <table class="responsive-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Spieler</th>
+            <th>Gepfiffen</th>
+            <th>Topf-Verdienst</th>
+            <th>Übernahmen</th>
+            <th>Weitergaben</th>
+            <th>Offene Gebühren</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tableRows}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
 function renderModal() {
   if (!state.modal) return "";
 
@@ -2047,13 +2373,15 @@ function render() {
     (state.data?.seasons ? state.data.seasons.find((s) => s.id === state.selectedSeasonId) : null) ||
     state.data?.seasons?.[0];
   const seasonsList = state.data?.seasons || (currentSeason ? [currentSeason] : []);
-  const seasonOpts = seasonsList
-    .map(
-      (s) =>
-        `<option value="${s.id}" ${s.id === currentSeason?.id ? "selected" : ""}>${esc(s.name)}${s.is_active ? " (Aktiv)" : ""}</option>`
-    )
-    .join("");
-  if (!showAdminTabs && !["games", "calendar", "tasks", "chains"].includes(state.tab)) {
+  const seasonOpts =
+    seasonsList
+      .map(
+        (s) =>
+          `<option value="${s.id}" ${s.id === currentSeason?.id ? "selected" : ""}>${esc(s.name)}${s.is_active ? " (Aktiv)" : ""}</option>`
+      )
+      .join("") +
+    `<option value="all" ${currentSeason?.id === "all" ? "selected" : ""}>🏆 Ewige Tabelle (Alle Saisons)</option>`;
+  if (!showAdminTabs && !["games", "calendar", "tasks", "chains", "stats"].includes(state.tab)) {
     state.tab = "games";
   }
 
@@ -2062,6 +2390,7 @@ function render() {
   else if (state.tab === "calendar") tabContent = renderCalendarTab();
   else if (state.tab === "tasks") tabContent = renderTasksTab();
   else if (state.tab === "chains") tabContent = renderChainsTab();
+  else if (state.tab === "stats") tabContent = renderStatsTab();
   else if (state.tab === "players" && showAdminTabs) tabContent = renderPlayersTab();
   else if (state.tab === "treasury" && showAdminTabs) tabContent = renderTreasuryTab();
   else if (state.tab === "docs" && showAdminTabs) tabContent = renderDocsTab();
@@ -2071,6 +2400,7 @@ function render() {
     calendar: "Kalender",
     tasks: "Meine Aufgaben",
     chains: "Weitergabeketten",
+    stats: "Statistiken & Rangliste",
     players: "Schiedsrichterliste (§ 2)",
     treasury: "Kasse & Härtefälle",
     docs: "Dokumentation (§ 6)",
@@ -2196,6 +2526,10 @@ function render() {
           <button class="drawer-nav-item ${state.tab === "chains" ? "active" : ""}" onclick="setTab('chains')">
             <span class="drawer-nav-icon">🔄</span>
             <span class="drawer-nav-text">Weitergabeketten</span>
+          </button>
+          <button class="drawer-nav-item ${state.tab === "stats" ? "active" : ""}" onclick="setTab('stats')">
+            <span class="drawer-nav-icon">🏆</span>
+            <span class="drawer-nav-text">Statistiken &amp; Rangliste</span>
           </button>
 
           ${
@@ -2534,7 +2868,7 @@ function downloadCsv(filename, headers, rows) {
 }
 
 window.changeSeason = async (seasonId) => {
-  state.selectedSeasonId = Number(seasonId);
+  state.selectedSeasonId = seasonId === "all" ? "all" : Number(seasonId);
   await loadDashboard();
 };
 
@@ -3006,6 +3340,22 @@ window.setChainSearch = (val, cursorPos) => {
     const pos = typeof cursorPos === "number" ? cursorPos : val.length;
     el.setSelectionRange(pos, pos);
   }
+};
+
+window.setStatsSearch = (val, cursorPos) => {
+  state.statsSearch = val;
+  render();
+  const el = document.getElementById("stats-search-input");
+  if (el) {
+    el.focus();
+    const pos = typeof cursorPos === "number" ? cursorPos : val.length;
+    el.setSelectionRange(pos, pos);
+  }
+};
+
+window.setStatsSort = (sort) => {
+  state.statsSort = sort;
+  render();
 };
 
 window.copyChatMsg = () => {
