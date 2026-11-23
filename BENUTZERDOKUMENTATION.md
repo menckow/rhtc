@@ -93,7 +93,13 @@ Das Navigationsmenü öffnet sich mobil und auf dem PC über den Button **`☰ M
 
 ### 5. 👥 Schiedsrichterliste (§ 2) *(Schiriwart & Admin)*
 - Komplette Mannschaftsliste mit Einsatzzählern, aktiven Ansetzungen, Offenen Gebühren und Ehrenamts-Status.
-- Möglichkeit zur manuellen Anpassung der Rotationsreihenfolge.
+- **Bearbeiten-Modal:** Administratoren und Schiedsrichterwarte können bei jedem Spieler:
+  - Vor- und Nachname, E-Mail und Mobilnummer bearbeiten
+  - Rolle und Berechtigungen festlegen
+  - Status "Aktiv in Schiedsrichterliste" und "Ehrenamtliche Befreiung (§ 7)" umschalten
+  - **Einsätze („eingesetzt“ nach § 1 Abs. 4 / § 2):** Die Anzahl der geleisteten Schiedsrichter-Einsätze kann bei Bedarf manuell angepasst/vorgegeben werden (wird bei manueller Korrektur mit `korr.` gekennzeichnet und direkt vom automatischen Zuteilungs-Algorithmus berücksichtigt).
+  - Rotationsreihenfolge (Listen-Position) überschreiben
+  - Passwort zurücksetzen
 
 ### 6. 💰 Kasse & Härtefälle *(Kassenwart & Admin)*
 - **Statistik-Kacheln:** Kassenanteil, offene Forderungen, bezahlte Gebühren, offene Auszahlungstöpfe.
