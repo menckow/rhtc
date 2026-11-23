@@ -156,7 +156,16 @@ export async function GET(
       allUsersRaw.filter((u) => !u.is_active_in_list)
     );
 
-    const seasonGames = await repo.games.listBySeason(season.id);
+    const [seasonGames, rawOverrides] = await Promise.all([
+      repo.games.listBySeason(season.id),
+      repo.settings.get("deployed_count_overrides"),
+    ]);
+    let deployedOverrides: Record<string, number> = {};
+    if (rawOverrides) {
+      try {
+        deployedOverrides = JSON.parse(rawOverrides);
+      } catch {}
+    }
     const gameIds = seasonGames.map((g) => g.id);
     const [chains, events] = await Promise.all([
       repo.chains.listByGameIds(gameIds),
@@ -199,10 +208,13 @@ export async function GET(
           c.status !== "CONFIRMED_DEPLOYED" &&
           c.status !== "UNASSIGNED"
       ).length;
-      const deployedCount = chains.filter(
+      const calculatedDeployed = chains.filter(
         (c) =>
           c.current_assignee_id === p.id && c.status === "CONFIRMED_DEPLOYED"
       ).length;
+      const ov = deployedOverrides[String(p.id)] ?? deployedOverrides[p.id];
+      const hasOverride = ov !== undefined && ov !== null;
+      const deployedCount = hasOverride ? Number(ov) : calculatedDeployed;
       const pEvents = sanitizedEvents.filter((e) => e.from_user_id === p.id);
       const openPaymentCents = pEvents
         .filter((e) => e.payment_status === "OPEN")
@@ -224,6 +236,7 @@ export async function GET(
         ...p,
         activeAssigned,
         deployedCount,
+        isDeployedOverridden: hasOverride,
         openPaymentCents,
         paidCents,
         earnedPayoutCents,
@@ -534,10 +547,17 @@ export async function POST(
     );
 
     // Initialisiere Scheduler-Daten einmalig im Speicher für maximale Geschwindigkeit
-    const [activePlayers, inMemoryChains] = await Promise.all([
+    const [activePlayers, inMemoryChains, rawOverrides] = await Promise.all([
       getSortedActivePlayersAsync(),
       repo.chains.listByGameIds(existingGames.map((g) => g.id)),
+      repo.settings.get("deployed_count_overrides"),
     ]);
+    let deployedOverrides: Record<string, number> = {};
+    if (rawOverrides) {
+      try {
+        deployedOverrides = JSON.parse(rawOverrides);
+      } catch {}
+    }
 
     let maxRefNum = 0;
     for (const c of inMemoryChains) {
@@ -583,6 +603,7 @@ export async function POST(
         if (!chosenId) {
           const next = findNextFreePlayerWithData(activePlayers, inMemoryChains, [], {
             gameIdToAvoidSameGameDouble: game.id,
+            deployedOverrides,
           });
           chosenId = next.player ? next.player.id : null;
           roundNumber = next.roundNumber;
@@ -1374,6 +1395,24 @@ export async function PATCH(
 
     if (body.password && String(body.password).trim().length > 0) {
       updates.password_hash = hashPassword(String(body.password).trim());
+    }
+
+    const deployedVal = body.deployedCount !== undefined ? body.deployedCount : body.deployed_count;
+    if (deployedVal !== undefined && (user.role === "SCHIEDSRICHTERWART" || user.role === "ADMIN")) {
+      const rawOverrides = await repo.settings.get("deployed_count_overrides");
+      let overrides: Record<string, number> = {};
+      if (rawOverrides) {
+        try {
+          overrides = JSON.parse(rawOverrides);
+        } catch {}
+      }
+      if (deployedVal === null || deployedVal === "") {
+        delete overrides[String(targetId)];
+        delete overrides[targetId];
+      } else {
+        overrides[String(targetId)] = Math.max(0, parseInt(String(deployedVal), 10) || 0);
+      }
+      await repo.settings.set("deployed_count_overrides", JSON.stringify(overrides));
     }
 
     await repo.users.update(targetId, updates);

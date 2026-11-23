@@ -733,4 +733,41 @@ export const repo = {
       sqlite.prepare(`UPDATE handoff_events SET ${sets.join(", ")} WHERE id = ?`).run(...vals);
     },
   },
+
+  settings: {
+    async get(key: string): Promise<string | null> {
+      if (supabase) {
+        const { data } = await supabase
+          .from("app_settings")
+          .select("value")
+          .eq("key", key)
+          .maybeSingle();
+        return data?.value ?? null;
+      }
+      try {
+        const row = sqlite
+          .prepare("SELECT value FROM app_settings WHERE key = ?")
+          .get(key) as { value: string } | undefined;
+        return row ? row.value : null;
+      } catch {
+        return null;
+      }
+    },
+
+    async set(key: string, value: string): Promise<void> {
+      if (supabase) {
+        const { error } = await supabase
+          .from("app_settings")
+          .upsert({ key, value }, { onConflict: "key" });
+        if (error) throw new Error(error.message);
+        return;
+      }
+      sqlite
+        .prepare(
+          `INSERT INTO app_settings (key, value) VALUES (?, ?)
+           ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+        )
+        .run(key, value);
+    },
+  },
 };

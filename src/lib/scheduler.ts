@@ -76,6 +76,7 @@ export function findNextFreePlayerWithData(
     gameIdToAvoidSameGameDouble?: number;
     excludeVolunteerExempt?: boolean;
     restrictToMinDeployed?: boolean;
+    deployedOverrides?: Record<string, number>;
   } = {}
 ): { player: SafeUser | null; roundNumber: number } {
   const sortedPlayers = options.excludeVolunteerExempt
@@ -104,13 +105,18 @@ export function findNextFreePlayerWithData(
   const deployedCounts = new Map<number, number>();
   const activeAssignedCounts = new Map<number, number>();
   for (const p of sortedPlayers) {
-    deployedCounts.set(p.id, 0);
+    const rawOv = options.deployedOverrides
+      ? options.deployedOverrides[String(p.id)]
+      : undefined;
+    deployedCounts.set(p.id, rawOv !== undefined ? Number(rawOv) : 0);
     activeAssignedCounts.set(p.id, 0);
   }
 
   for (const c of allChains) {
     if (c.status === "CONFIRMED_DEPLOYED" && c.current_assignee_id) {
-      if (deployedCounts.has(c.current_assignee_id)) {
+      const isOverridden = options.deployedOverrides &&
+        options.deployedOverrides[String(c.current_assignee_id)] !== undefined;
+      if (deployedCounts.has(c.current_assignee_id) && !isOverridden) {
         deployedCounts.set(
           c.current_assignee_id,
           (deployedCounts.get(c.current_assignee_id) ?? 0) + 1
@@ -191,8 +197,16 @@ export async function findNextFreePlayerAsync(
     gameIdToAvoidSameGameDouble?: number;
     excludeVolunteerExempt?: boolean;
     restrictToMinDeployed?: boolean;
+    deployedOverrides?: Record<string, number>;
   } = {}
 ): Promise<{ player: SafeUser | null; roundNumber: number }> {
+  let deployedOverrides = options.deployedOverrides;
+  if (!deployedOverrides) {
+    try {
+      const raw = await repo.settings.get("deployed_count_overrides");
+      if (raw) deployedOverrides = JSON.parse(raw);
+    } catch {}
+  }
   const [activePlayers, seasonGames] = await Promise.all([
     getSortedActivePlayersAsync(),
     repo.games.listBySeason(seasonId),
@@ -208,7 +222,10 @@ export async function findNextFreePlayerAsync(
     .filter((e) => e.event_type === "HANDOFF_SKIPPED_UNAVAILABLE" && e.from_user_id)
     .map((e) => e.from_user_id as number);
 
-  return findNextFreePlayerWithData(activePlayers, chains, skippedUserIds, options);
+  return findNextFreePlayerWithData(activePlayers, chains, skippedUserIds, {
+    ...options,
+    deployedOverrides,
+  });
 }
 
 export async function getNextSeasonRefCodeAsync(seasonId: number): Promise<string> {
@@ -239,8 +256,18 @@ export function findNextFreePlayer(
     gameIdToAvoidSameGameDouble?: number;
     excludeVolunteerExempt?: boolean;
     restrictToMinDeployed?: boolean;
+    deployedOverrides?: Record<string, number>;
   } = {}
 ): { player: SafeUser | null; roundNumber: number } {
+  let deployedOverrides = options.deployedOverrides;
+  if (!deployedOverrides) {
+    try {
+      const row = sqlite
+        .prepare("SELECT value FROM app_settings WHERE key = 'deployed_count_overrides'")
+        .get() as { value: string } | undefined;
+      if (row?.value) deployedOverrides = JSON.parse(row.value);
+    } catch {}
+  }
   const allActive = getSortedActivePlayers();
   const seasonGames = sqlite
     .prepare("SELECT id FROM games WHERE season_id = ?")
@@ -270,7 +297,10 @@ export function findNextFreePlayer(
       .map((e) => e.from_user_id as number);
   }
 
-  return findNextFreePlayerWithData(allActive, allChains, skippedUserIds, options);
+  return findNextFreePlayerWithData(allActive, allChains, skippedUserIds, {
+    ...options,
+    deployedOverrides,
+  });
 }
 
 export function getNextSeasonRefCode(seasonId: number): string {

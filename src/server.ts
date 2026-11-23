@@ -280,6 +280,14 @@ const server = http.createServer(async (req, res) => {
             })),
         }));
 
+        let deployedOverrides: Record<string, number> = {};
+        try {
+          const row = sqlite
+            .prepare("SELECT value FROM app_settings WHERE key = 'deployed_count_overrides'")
+            .get() as { value: string } | undefined;
+          if (row?.value) deployedOverrides = JSON.parse(row.value);
+        } catch {}
+
         const playerStats = [...sortedActive, ...inactiveUsers].map((p) => {
           const activeAssigned = chains.filter(
             (c) =>
@@ -287,10 +295,13 @@ const server = http.createServer(async (req, res) => {
               c.status !== "CONFIRMED_DEPLOYED" &&
               c.status !== "UNASSIGNED"
           ).length;
-          const deployedCount = chains.filter(
+          const calculatedDeployed = chains.filter(
             (c) =>
               c.current_assignee_id === p.id && c.status === "CONFIRMED_DEPLOYED"
           ).length;
+          const ov = deployedOverrides[String(p.id)] ?? deployedOverrides[p.id];
+          const hasOverride = ov !== undefined && ov !== null;
+          const deployedCount = hasOverride ? Number(ov) : calculatedDeployed;
           const pEvents = sanitizedEvents.filter((e) => e.from_user_id === p.id);
           const openPaymentCents = pEvents
             .filter((e) => e.payment_status === "OPEN")
@@ -311,6 +322,7 @@ const server = http.createServer(async (req, res) => {
             ...p,
             activeAssigned,
             deployedCount,
+            isDeployedOverridden: hasOverride,
             openPaymentCents,
             paidCents,
             earnedPayoutCents,
@@ -602,7 +614,7 @@ const server = http.createServer(async (req, res) => {
       // --- UPDATE USER (§ 2 Abs. 4 / § 7) ---
       const userMatch = pathname.match(/^\/api\/users\/(\d+)$/);
       if (method === "PATCH" && userMatch) {
-        if (user.role !== "SCHIEDSRICHTERWART" && user.role !== "VORSTAND") {
+        if (user.role !== "SCHIEDSRICHTERWART" && user.role !== "ADMIN" && user.role !== "VORSTAND") {
           return sendJson(res, 403, {
             error: "Keine Berechtigung zur Listenpflege.",
           });
@@ -640,7 +652,7 @@ const server = http.createServer(async (req, res) => {
           "ADMIN",
         ];
         const role =
-          user.role === "SCHIEDSRICHTERWART" &&
+          (user.role === "SCHIEDSRICHTERWART" || user.role === "ADMIN") &&
           body.role !== undefined &&
           allowedRoles.includes(String(body.role))
             ? String(body.role)
@@ -682,7 +694,7 @@ const server = http.createServer(async (req, res) => {
             : existing.list_order_override;
 
         const newPasswordHash =
-          user.role === "SCHIEDSRICHTERWART" &&
+          (user.role === "SCHIEDSRICHTERWART" || user.role === "ADMIN") &&
           body.password &&
           String(body.password).trim().length > 0
             ? hashPassword(String(body.password).trim())
@@ -707,6 +719,41 @@ const server = http.createServer(async (req, res) => {
             listOrderOverride,
             targetId
           );
+
+        const deployedVal =
+          body.deployedCount !== undefined
+            ? body.deployedCount
+            : body.deployed_count;
+        if (
+          deployedVal !== undefined &&
+          (user.role === "SCHIEDSRICHTERWART" || user.role === "ADMIN")
+        ) {
+          let overrides: Record<string, number> = {};
+          try {
+            const row = sqlite
+              .prepare(
+                "SELECT value FROM app_settings WHERE key = 'deployed_count_overrides'"
+              )
+              .get() as { value: string } | undefined;
+            if (row?.value) overrides = JSON.parse(row.value);
+          } catch {}
+          if (deployedVal === null || deployedVal === "") {
+            delete overrides[String(targetId)];
+            delete overrides[targetId];
+          } else {
+            overrides[String(targetId)] = Math.max(
+              0,
+              parseInt(String(deployedVal), 10) || 0
+            );
+          }
+          sqlite
+            .prepare(
+              `INSERT INTO app_settings (key, value) VALUES ('deployed_count_overrides', ?)
+               ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+            )
+            .run(JSON.stringify(overrides));
+        }
+
         return sendJson(res, 200, { ok: true });
       }
 

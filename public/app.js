@@ -1008,7 +1008,7 @@ function renderPlayersTab() {
             ${p.is_volunteer_exempt ? `<span class="badge badge-blue">Ehrenamt (§ 7)</span>` : ""}
           </div>
         </td>
-        <td data-label="Einsätze"><strong>${p.deployedCount}</strong> eingesetzt / ${p.activeAssigned} anges.</td>
+        <td data-label="Einsätze"><strong>${p.deployedCount}</strong> eingesetzt${p.isDeployedOverridden ? ` <span class="badge badge-gray" style="font-size:0.7rem;vertical-align:middle" title="Manuell korrigiert">korr.</span>` : ""} / ${p.activeAssigned} anges.</td>
         <td data-label="Offen">${p.openPaymentCents > 0 ? `<strong style="color:var(--danger)">${formatEuro(p.openPaymentCents)}</strong>` : "0,00 €"}</td>
         ${
           isWart
@@ -1864,6 +1864,9 @@ function renderModal() {
 
   if (state.modal.type === "editPlayer") {
     const p = state.modal.player;
+    const canEditDeployed =
+      state.user &&
+      (state.user.role === "ADMIN" || state.user.role === "SCHIEDSRICHTERWART");
     return `
       <div class="modal-backdrop" onclick="if(event.target===this) closeModal()">
         <div class="modal">
@@ -1893,6 +1896,21 @@ function renderModal() {
                 <input type="number" id="ep-order" min="1" placeholder="Alphabetisch (leer)" value="${p.list_order_override ?? ""}" />
               </div>
             </div>
+            ${
+              canEditDeployed
+                ? `
+              <div class="form-group" style="background:var(--card-bg, #f8fafc);padding:10px 12px;border:1px solid var(--border,#e2e8f0);border-radius:6px;margin-bottom:12px">
+                <label style="font-weight:600;display:flex;align-items:center;gap:6px">
+                  <span>Einsätze („eingesetzt“ nach § 1 Abs. 4 / § 2)</span>
+                </label>
+                <div style="display:flex;align-items:center;gap:10px;margin-top:4px">
+                  <input type="number" id="ep-deployed" min="0" value="${p.deployedCount ?? 0}" style="width:100px" />
+                  <span style="font-size:0.8rem;color:var(--muted)">Manuelle Korrektur / Vorgabe der Anzahl geleisteter Schiri-Einsätze</span>
+                </div>
+              </div>
+            `
+                : ""
+            }
             <div class="form-group">
               <label><input type="checkbox" id="ep-active" style="width:auto;margin-right:6px" ${p.is_active_in_list ? "checked" : ""} /> Aktiv in Schiedsrichterliste (§ 2 Abs. 4)</label>
             </div>
@@ -2407,6 +2425,8 @@ function attachModalHandlers() {
       try {
         const orderVal = document.getElementById("ep-order").value.trim();
         const passVal = document.getElementById("ep-pass").value.trim();
+        const deployedEl = document.getElementById("ep-deployed");
+        const deployedVal = deployedEl ? deployedEl.value.trim() : null;
         await api(`/api/users/${playerId}`, {
           method: "PATCH",
           body: JSON.stringify({
@@ -2418,6 +2438,9 @@ function attachModalHandlers() {
             listOrderOverride: orderVal === "" ? null : Number(orderVal),
             isActiveInList: document.getElementById("ep-active").checked,
             isVolunteerExempt: document.getElementById("ep-exempt").checked,
+            ...(deployedVal !== null && deployedVal !== ""
+              ? { deployedCount: Math.max(0, parseInt(deployedVal, 10) || 0) }
+              : {}),
             ...(passVal ? { password: passVal } : {}),
           }),
         });
