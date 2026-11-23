@@ -125,6 +125,8 @@ Das Navigationsmenü öffnet sich mobil und auf dem PC über den Button **`☰ M
 3. **Erstes Saisonspiel (§ 3 Abs. 3):** Beim 1. Saisonspiel wird der Ansetzungszyklus traditionell gestartet.
 
 ### § 4: Die Weitergabe (Handoff-Logik)
+*(Ausführliches Regelwerk & Gebührenaufteilung siehe [REGELN_WEITERLEITUNG.md](file:///Users/omenck/Downloads/Demo/Schiri/rhtc/REGELN_WEITERLEITUNG.md))*
+
 Wer einen angesetzten Termin nicht wahrnehmen kann, muss den Slot über die Plattform weitergeben:
 1. **Reguläre Weitergabe:**
    - Kostet **15,00 € Schutzgebühr**.
