@@ -1536,7 +1536,7 @@ function renderDocsTab() {
   `;
 }
 
-function renderPodiumCard({ icon, title, subtitle, badgeName, items, formatVal, isJackpot }) {
+function renderPodiumCard({ icon, title, subtitle, badgeName, items, formatVal, isJackpot, getScore }) {
   if (!items || items.length === 0) {
     return `
       <div class="podium-card">
@@ -1554,27 +1554,95 @@ function renderPodiumCard({ icon, title, subtitle, badgeName, items, formatVal, 
     `;
   }
 
-  const champ = items[0];
-  const runners = items.slice(1);
+  // Calculate ranks handling ties
+  const scoreFn = getScore || ((item) => (isJackpot ? item.ch.payout_pool_cents : formatVal(item)));
+  let currentRank = 1;
+  const rankedItems = items.map((item, idx) => {
+    if (idx > 0) {
+      const prevScore = scoreFn(items[idx - 1]);
+      const currScore = scoreFn(item);
+      if (currScore !== prevScore) {
+        currentRank = idx + 1;
+      }
+    } else {
+      currentRank = 1;
+    }
+    return { item, rank: currentRank };
+  });
 
-  const champName = isJackpot
-    ? `${champ.g.title} (${champ.ch.ref_code || `Slot ${champ.ch.slot_number}`})`
-    : `${champ.last_name}, ${champ.first_name}`;
-  const champVal = isJackpot
-    ? formatEuro(champ.ch.payout_pool_cents)
-    : formatVal(champ);
-  const champSub = isJackpot
-    ? (champ.ch.currentAssignee ? `Gepfiffen: ${champ.ch.currentAssignee.last_name}, ${champ.ch.currentAssignee.first_name}` : "Status: Offen")
-    : badgeName;
+  const champions = rankedItems.filter((r) => r.rank === 1);
+  const runners = rankedItems.filter((r) => r.rank > 1);
+
+  let champHtml = "";
+  if (champions.length === 1) {
+    const champ = champions[0].item;
+    const champName = isJackpot
+      ? `${champ.g.title} (${champ.ch.ref_code || `Slot ${champ.ch.slot_number}`})`
+      : `${champ.last_name}, ${champ.first_name}`;
+    const champVal = isJackpot
+      ? formatEuro(champ.ch.payout_pool_cents)
+      : formatVal(champ);
+    const champSub = isJackpot
+      ? (champ.ch.currentAssignee ? `Gepfiffen: ${champ.ch.currentAssignee.last_name}, ${champ.ch.currentAssignee.first_name}` : "Status: Offen")
+      : badgeName;
+
+    champHtml = `
+      <div class="podium-champion">
+        <div class="champion-crown">🥇</div>
+        <div class="champion-info">
+          <div class="champion-name" title="${esc(champName)}">${esc(champName)}</div>
+          <div class="champion-badge">${esc(champSub)}</div>
+        </div>
+        <div class="champion-val">${esc(champVal)}</div>
+      </div>
+    `;
+  } else {
+    // Multiple champions tied for Rank 1
+    const sharedVal = isJackpot
+      ? formatEuro(champions[0].item.ch.payout_pool_cents)
+      : formatVal(champions[0].item);
+
+    champHtml = `
+      <div class="podium-champion-multi">
+        <div class="champion-multi-header">
+          <span style="font-size:1.15rem">🥇</span>
+          <span><strong>Platz 1 (Geteilt - ${champions.length} Spieler)</strong></span>
+          <span class="badge badge-gold" style="margin-left:auto">${esc(sharedVal)}</span>
+        </div>
+        <div class="champion-multi-list">
+          ${champions
+            .map((c) => {
+              const name = isJackpot
+                ? `${c.item.g.title} (${c.item.ch.ref_code || `Slot ${c.item.ch.slot_number}`})`
+                : `${c.item.last_name}, ${c.item.first_name}`;
+              const sub = isJackpot
+                ? (c.item.ch.currentAssignee ? `Gepfiffen: ${c.item.ch.currentAssignee.last_name}, ${c.item.ch.currentAssignee.first_name}` : "Status: Offen")
+                : badgeName;
+              return `
+                <div class="champion-multi-item">
+                  <span class="champion-multi-bullet">🏆</span>
+                  <div style="flex:1;min-width:0">
+                    <span class="champion-multi-name" title="${esc(name)}">${esc(name)}</span>
+                    <span class="champion-multi-sub"> &bull; ${esc(sub)}</span>
+                  </div>
+                </div>
+              `;
+            })
+            .join("")}
+        </div>
+      </div>
+    `;
+  }
 
   let runnersHtml = "";
   if (runners.length > 0) {
+    const displayedRunners = runners.slice(0, 8);
+    const hiddenCount = runners.length - displayedRunners.length;
     runnersHtml = `
       <div class="podium-runners">
-        ${runners
-          .map((item, idx) => {
-            const rank = idx + 2;
-            const rankIcon = rank === 2 ? "🥈" : rank === 3 ? "🥉" : `#${rank}`;
+        ${displayedRunners
+          .map(({ item, rank }) => {
+            const rankIcon = rank === 2 ? "🥈 2." : rank === 3 ? "🥉 3." : `${rank}.`;
             const name = isJackpot
               ? `${item.g.title} (${item.ch.ref_code || `Slot ${item.ch.slot_number}`})`
               : `${item.last_name}, ${item.first_name}`;
@@ -1583,13 +1651,14 @@ function renderPodiumCard({ icon, title, subtitle, badgeName, items, formatVal, 
               : formatVal(item);
             return `
               <div class="runner-row">
-                <span class="runner-rank">${rankIcon}</span>
+                <span class="runner-rank" style="min-width:44px;font-size:0.8rem">${rankIcon}</span>
                 <span class="runner-name" title="${esc(name)}">${esc(name)}</span>
                 <span class="runner-val">${esc(val)}</span>
               </div>
             `;
           })
           .join("")}
+        ${hiddenCount > 0 ? `<div style="font-size:0.75rem;color:var(--muted);text-align:center;padding:6px 0">+ ${hiddenCount} weitere Spieler in Gesamt-Tabelle</div>` : ""}
       </div>
     `;
   }
@@ -1603,14 +1672,7 @@ function renderPodiumCard({ icon, title, subtitle, badgeName, items, formatVal, 
           <div class="podium-card-sub">${subtitle}</div>
         </div>
       </div>
-      <div class="podium-champion">
-        <div class="champion-crown">🥇</div>
-        <div class="champion-info">
-          <div class="champion-name" title="${esc(champName)}">${esc(champName)}</div>
-          <div class="champion-badge">${esc(champSub)}</div>
-        </div>
-        <div class="champion-val">${esc(champVal)}</div>
-      </div>
+      ${champHtml}
       ${runnersHtml}
     </div>
   `;
@@ -1628,13 +1690,11 @@ function renderStatsTab() {
   const byDeployed = [...players]
     .filter((p) => p.deployedCount > 0)
     .sort((a, b) => b.deployedCount - a.deployedCount || a.last_name.localeCompare(b.last_name, "de"));
-  const topDeployed = byDeployed.slice(0, 5);
 
   // 2. Top Topfjäger
   const byEarned = [...players]
     .filter((p) => (p.earnedPayoutCents || 0) > 0)
-    .sort((a, b) => b.earnedPayoutCents - a.earnedPayoutCents || a.last_name.localeCompare(b.last_name, "de"));
-  const topEarned = byEarned.slice(0, 5);
+    .sort((a, b) => (b.earnedPayoutCents || 0) - (a.earnedPayoutCents || 0) || a.last_name.localeCompare(b.last_name, "de"));
 
   // 3. Höchste Töpfe (Jackpot-Spiele)
   const poolChains = [];
@@ -1650,25 +1710,45 @@ function renderStatsTab() {
       b.ch.payout_pool_cents - a.ch.payout_pool_cents ||
       new Date(b.g.kickoff_at).getTime() - new Date(a.g.kickoff_at).getTime()
   );
-  const topPools = poolChains.slice(0, 5);
 
   // 4. Team-Retter (Meiste Übernahmen)
   const byTakeovers = [...players]
     .filter((p) => (p.takeoverCount || 0) > 0)
     .sort((a, b) => (b.takeoverCount || 0) - (a.takeoverCount || 0) || a.last_name.localeCompare(b.last_name, "de"));
-  const topTakeovers = byTakeovers.slice(0, 5);
 
   // 5. Staffelläufer (Meiste Weitergaben)
   const byHandoffs = [...players]
     .filter((p) => (p.handoffCount || 0) > 0)
     .sort((a, b) => (b.handoffCount || 0) - (a.handoffCount || 0) || a.last_name.localeCompare(b.last_name, "de"));
-  const topHandoffs = byHandoffs.slice(0, 5);
 
-  // Spitzenreiter für Badges
-  const topDeployedId = topDeployed[0] ? topDeployed[0].id : null;
-  const topEarnedId = topEarned[0] ? topEarned[0].id : null;
-  const topTakeoverId = topTakeovers[0] ? topTakeovers[0].id : null;
-  const topHandoffId = topHandoffs[0] ? topHandoffs[0].id : null;
+  // Spitzenreiter für Badges (alle Spieler mit Höchstwert erhalten das Badge!)
+  const maxDeployed = byDeployed.length > 0 ? byDeployed[0].deployedCount : 0;
+  const topDeployedIds = new Set(
+    maxDeployed > 0 ? byDeployed.filter((p) => p.deployedCount === maxDeployed).map((p) => p.id) : []
+  );
+
+  const maxEarned = byEarned.length > 0 ? (byEarned[0].earnedPayoutCents || 0) : 0;
+  const topEarnedIds = new Set(
+    maxEarned > 0 ? byEarned.filter((p) => (p.earnedPayoutCents || 0) === maxEarned).map((p) => p.id) : []
+  );
+
+  const maxTakeover = byTakeovers.length > 0 ? (byTakeovers[0].takeoverCount || 0) : 0;
+  const topTakeoverIds = new Set(
+    maxTakeover > 0 ? byTakeovers.filter((p) => (p.takeoverCount || 0) === maxTakeover).map((p) => p.id) : []
+  );
+
+  const maxHandoff = byHandoffs.length > 0 ? (byHandoffs[0].handoffCount || 0) : 0;
+  const topHandoffIds = new Set(
+    maxHandoff > 0 ? byHandoffs.filter((p) => (p.handoffCount || 0) === maxHandoff).map((p) => p.id) : []
+  );
+
+  // Helper für Rang-Vergleich in Gesamt-Tabelle
+  function getSortValue(p, mode) {
+    if (mode === "earned") return p.earnedPayoutCents || 0;
+    if (mode === "takeovers") return p.takeoverCount || 0;
+    if (mode === "handoffs") return p.handoffCount || 0;
+    return p.deployedCount || 0;
+  }
 
   // Filter & Sortierung für Gesamt-Tabelle
   let filteredPlayers = [...players];
@@ -1694,25 +1774,36 @@ function renderStatsTab() {
     }
   });
 
+  let currentTableRank = 1;
   const tableRows =
     filteredPlayers.length === 0
       ? `<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:24px">Keine Spieler gefunden.</td></tr>`
       : filteredPlayers
           .map((p, idx) => {
+            if (idx > 0) {
+              const prevVal = getSortValue(filteredPlayers[idx - 1], sortMode);
+              const currVal = getSortValue(p, sortMode);
+              if (currVal !== prevVal) {
+                currentTableRank = idx + 1;
+              }
+            } else {
+              currentTableRank = 1;
+            }
+
             const isMe = p.id === state.user.id;
             let badgesHtml = "";
-            if (p.id === topDeployedId)
+            if (topDeployedIds.has(p.id))
               badgesHtml += `<span class="stats-badge-tag stats-badge-gold" title="Meiste gepfiffene Spiele">🏆 Einsatzkönig</span>`;
-            if (p.id === topEarnedId)
+            if (topEarnedIds.has(p.id))
               badgesHtml += `<span class="stats-badge-tag stats-badge-green" title="Höchster Prämien-Verdienst">💰 Cash-King</span>`;
-            if (p.id === topTakeoverId)
+            if (topTakeoverIds.has(p.id))
               badgesHtml += `<span class="stats-badge-tag stats-badge-blue" title="Meiste Einsätze gerettet">🛡️ Retter</span>`;
-            if (p.id === topHandoffId)
+            if (topHandoffIds.has(p.id))
               badgesHtml += `<span class="stats-badge-tag stats-badge-purple" title="Meiste Ansetzungen weitergegeben">🏃 Staffel</span>`;
 
             return `
               <tr class="${isMe ? "stats-row-current-user" : ""}">
-                <td data-label="#"><strong>${idx + 1}</strong></td>
+                <td data-label="#"><strong>${currentTableRank}</strong></td>
                 <td data-label="Spieler" class="cell-main">
                   <div>
                     <strong>${esc(p.last_name)}, ${esc(p.first_name)}</strong>
@@ -1745,7 +1836,7 @@ function renderStatsTab() {
   return `
     <div class="stats-header-wrap">
       <div>
-        <h2 style="margin:0;font-size:1.15rem">🏆 Hall of Fame &amp; Gamification-Rangliste</h2>
+        <h2 style="margin:0;font-size:1.15rem">🏆 Hall of Fame &amp; Rangliste</h2>
         <div style="font-size:0.85rem;color:var(--muted);margin-top:2px">
           ${
             isAllTime
@@ -1770,7 +1861,8 @@ function renderStatsTab() {
         title: "Einsatzkönige",
         subtitle: "Meiste gepfiffene Spiele",
         badgeName: "Einsatzkönig",
-        items: topDeployed,
+        items: byDeployed,
+        getScore: (p) => p.deployedCount,
         formatVal: (p) => `${p.deployedCount} ${p.deployedCount === 1 ? "Spiel" : "Spiele"}`,
         isJackpot: false,
       })}
@@ -1780,7 +1872,8 @@ function renderStatsTab() {
         title: "Topfjäger",
         subtitle: "Höchste verdiente Prämien",
         badgeName: "Cash-King",
-        items: topEarned,
+        items: byEarned,
+        getScore: (p) => p.earnedPayoutCents || 0,
         formatVal: (p) => formatEuro(p.earnedPayoutCents),
         isJackpot: false,
       })}
@@ -1790,7 +1883,8 @@ function renderStatsTab() {
         title: "Höchste Töpfe",
         subtitle: "Jackpot-Spiele der Saison",
         badgeName: "Top-Jackpot",
-        items: topPools,
+        items: poolChains,
+        getScore: (item) => item.ch.payout_pool_cents || 0,
         formatVal: () => "",
         isJackpot: true,
       })}
@@ -1800,7 +1894,8 @@ function renderStatsTab() {
         title: "Team-Retter",
         subtitle: "Meiste Übernahmen für andere",
         badgeName: "Team-Retter",
-        items: topTakeovers,
+        items: byTakeovers,
+        getScore: (p) => p.takeoverCount || 0,
         formatVal: (p) => `${p.takeoverCount}× gerettet`,
         isJackpot: false,
       })}
@@ -1810,7 +1905,8 @@ function renderStatsTab() {
         title: "Staffelläufer",
         subtitle: "Meiste Weiterleitungen",
         badgeName: "Staffelläufer",
-        items: topHandoffs,
+        items: byHandoffs,
+        getScore: (p) => p.handoffCount || 0,
         formatVal: (p) => `${p.handoffCount}× weitergegeben`,
         isJackpot: false,
       })}

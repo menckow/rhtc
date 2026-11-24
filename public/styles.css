@@ -1687,7 +1687,7 @@ th { font-size: 0.76rem; color: var(--muted); text-transform: uppercase; letter-
   }
 }
 
-/* --- GAMIFICATION & STATS VIEW --- */
+/* --- STATS & LEADERBOARD VIEW --- */
 .stats-header-wrap {
   display: flex;
   justify-content: space-between;
@@ -1818,6 +1818,39 @@ th { font-size: 0.76rem; color: var(--muted); text-transform: uppercase; letter-
   color: #111;
   text-align: right;
   white-space: nowrap;
+}
+
+.podium-champion-multi {
+  background: linear-gradient(135deg, #fffbf0 0%, #fef7e0 100%);
+  border: 1.5px solid var(--gold);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  box-shadow: 0 2px 8px rgba(212, 160, 23, 0.15);
+}
+
+.champion-multi-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(212, 160, 23, 0.3);
+}
+
+.champion-multi-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.champion-multi-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #111;
 }
 
 .podium-runners {
