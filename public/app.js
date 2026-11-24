@@ -900,8 +900,98 @@ function renderTasksTab() {
     `;
   }
 
-  if (pendingForMe.length === 0 && voluntaryRequestsForMe.length === 0) {
-    html += `<div class="alert alert-info">Aktuell liegen keine offenen Anfragen für dich vor.</div>`;
+  // Offene Zahlungen für mich (Weitergabe-Gebühren)
+  const myOpenPayments = (state.data.events || []).filter(
+    (e) => e.from_user_id === uId && e.payment_status === "OPEN" && (e.fee_total_cents - (e.waived_amount_cents || 0)) > 0
+  );
+
+  if (pendingForMe.length === 0 && voluntaryRequestsForMe.length === 0 && myOpenPayments.length === 0) {
+    html += `<div class="alert alert-info">Aktuell liegen keine offenen Aufgaben für dich vor. Alles erledigt! 🎉</div>`;
+  }
+
+  // 1. Offene Zahlungsaufforderungen für Weitergaben
+  if (myOpenPayments.length > 0) {
+    const ts = state.data?.treasurySettings || {};
+    const totalMyOpenCents = myOpenPayments.reduce(
+      (acc, e) => acc + (e.fee_total_cents - (e.waived_amount_cents || 0)),
+      0
+    );
+
+    html += `
+      <div class="card" style="border-left:4px solid var(--danger);background:#fff9f9">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
+          <div>
+            <strong style="color:var(--danger);font-size:1.02rem;display:flex;align-items:center;gap:6px">
+              <span>💳</span> Offene Weitergabe-Gebühr zu zahlen
+            </strong>
+            <p style="margin:4px 0 0 0;font-size:0.85rem;color:var(--text)">
+              Du hast ein oder mehrere Spiele weitergegeben (§ 4). Bitte zahle den offenen Betrag von insgesamt <strong>${formatEuro(totalMyOpenCents)}</strong> in die Mannschaftskasse / den Schiri-Topf ein.
+            </p>
+          </div>
+          <span class="badge badge-red" style="font-size:0.85rem;padding:4px 8px">${formatEuro(totalMyOpenCents)} offen</span>
+        </div>
+
+        <div style="margin:14px 0 10px 0;display:flex;flex-direction:column;gap:8px">
+          ${myOpenPayments
+            .map((ev) => {
+              const g = state.data?.games?.find((game) => game.id === ev.game_id);
+              const due = ev.fee_total_cents - (ev.waived_amount_cents || 0);
+              return `
+                <div style="background:#ffffff;border:1px solid #fed7d7;border-radius:6px;padding:8px 12px;display:flex;justify-content:space-between;align-items:center;font-size:0.85rem;flex-wrap:wrap;gap:6px">
+                  <div>
+                    <strong>${esc(g?.title || "Schiri-Spiel")}</strong>
+                    <div style="color:var(--muted);font-size:0.75rem">Weitergabe am ${formatDate(ev.created_at)} ${ev.public_note ? `&bull; „${esc(ev.public_note)}“` : ""}</div>
+                  </div>
+                  <strong style="color:var(--danger)">${formatEuro(due)}</strong>
+                </div>
+              `;
+            })
+            .join("")}
+        </div>
+
+        <!-- Zahlungsdaten & Aktionen -->
+        <div style="background:#ffffff;border:1px dashed #e2e8f0;border-radius:7px;padding:12px;margin-top:8px;font-size:0.85rem">
+          <strong style="display:block;margin-bottom:6px;color:#1e293b">Bank- &amp; Zahlungsdaten der Mannschaftskasse:</strong>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:8px;margin-bottom:10px">
+            <div>
+              <div style="font-size:0.75rem;color:var(--muted)">Empfänger:</div>
+              <strong>${esc(ts.recipient || "RHTC 2. Herren Kasse")}</strong>
+            </div>
+            ${
+              ts.iban
+                ? `
+                  <div>
+                    <div style="font-size:0.75rem;color:var(--muted)">IBAN:</div>
+                    <code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;font-size:0.85rem;user-select:all">${esc(ts.iban)}</code>
+                  </div>
+                `
+                : `<div style="color:var(--muted);font-size:0.8rem">IBAN wird noch durch Kassenwart hinterlegt.</div>`
+            }
+          </div>
+
+          <div class="btn-row" style="margin:0;gap:8px">
+            ${
+              ts.paypal
+                ? `
+                  <a href="https://${ts.paypal.replace(/^https?:\/\//, "")}/${(totalMyOpenCents / 100).toFixed(2)}" target="_blank" rel="noopener" class="btn btn-primary btn-sm" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;background:#0070ba;border-color:#0070ba">
+                    <span>🅿️</span> Direkt per PayPal zahlen (${formatEuro(totalMyOpenCents)})
+                  </a>
+                `
+                : ""
+            }
+            ${
+              ts.iban
+                ? `
+                  <button type="button" class="btn btn-outline btn-sm" onclick="copyIbanToClipboard('${esc(ts.iban)}')">
+                    📋 IBAN kopieren
+                  </button>
+                `
+                : ""
+            }
+          </div>
+        </div>
+      </div>
+    `;
   }
 
   for (const { g, ch } of pendingForMe) {
@@ -3035,20 +3125,25 @@ function render() {
     return;
   }
 
-  const pendingCount = state.data.games.reduce(
-    (acc, g) =>
-      acc +
-      g.chains.filter((c) => {
-        const rid = c.pending_assignee_id ?? c.current_assignee_id;
-        return (
-          rid === state.user.id &&
-          (c.status === "ASSIGNED" ||
-            c.status === "PENDING_HANDOFF" ||
-            c.status === "VOLUNTARY_REQUESTED")
-        );
-      }).length,
-    0
-  );
+  const myOpenPaymentsCount = (state.data.events || []).filter(
+    (e) => e.from_user_id === state.user.id && e.payment_status === "OPEN" && (e.fee_total_cents - (e.waived_amount_cents || 0)) > 0
+  ).length;
+
+  const pendingCount =
+    state.data.games.reduce(
+      (acc, g) =>
+        acc +
+        g.chains.filter((c) => {
+          const rid = c.pending_assignee_id ?? c.current_assignee_id;
+          return (
+            rid === state.user.id &&
+            (c.status === "ASSIGNED" ||
+              c.status === "PENDING_HANDOFF" ||
+              c.status === "VOLUNTARY_REQUESTED")
+          );
+        }).length,
+      0
+    ) + myOpenPaymentsCount;
 
   const showAdminTabs = canViewAdminTabs(state.user);
   const isWartOrAdmin =
@@ -4146,6 +4241,17 @@ function openReminderModal({ title, subtitle, message, recipientUser, isGroupSha
   };
   render();
 }
+
+window.copyIbanToClipboard = (iban) => {
+  if (!iban) return;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(iban).then(() => {
+      alert(`IBAN kopiert: ${iban}`);
+    });
+  } else {
+    prompt("IBAN zum Kopieren:", iban);
+  }
+};
 
 window.copyReminderText = () => {
   const box = document.getElementById("reminder-msg-box");

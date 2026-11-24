@@ -84,6 +84,7 @@ Das Navigationsmenü öffnet sich mobil und auf dem PC über den Button **`☰ M
 - Direkter Überblick aller persönlichen To-Dos:
   - Offene Ansetzungen, die noch bestätigt werden müssen.
   - Eingehende Übernahme-Anfragen anderer Spieler, die freigegeben werden müssen.
+  - **Offene Weitergabe-Gebühren (Zahlungsaufforderung):** Zeigt sofort an, wenn nach einer Weitergabe noch Gebühren offen sind, inkl. Gesamtsumme, Auflistung der betroffenen Spiele, Mannschafts-IBAN (mit 1-Klick-Kopieren) und Direkt-Zahlungslink via PayPal.
 
 ### 4. 🔄 Weitergabeketten (Für alle Spieler lesbar)
 - Visueller Graph jeder Ansetzung von der Erstzuteilung über alle Weitergaben bis zum endgültigen Schiedsrichter.
