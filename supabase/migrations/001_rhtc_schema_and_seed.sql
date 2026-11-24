@@ -28,6 +28,8 @@ CREATE TABLE users (
   last_name TEXT NOT NULL,
   email TEXT NOT NULL UNIQUE,
   mobile_number TEXT,
+  iban TEXT,
+  paypal TEXT,
   password_hash TEXT NOT NULL,
   role TEXT NOT NULL DEFAULT 'PLAYER',
   is_active_in_list BOOLEAN NOT NULL DEFAULT TRUE,

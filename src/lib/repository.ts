@@ -25,14 +25,51 @@ export const supabase: SupabaseClient | null =
 export const isUsingSupabase = Boolean(supabase);
 
 // Hilfsfunktionen zur Konvertierung zwischen SQLite (0/1) und Postgres (true/false)
-function mapUserFromPg(r: any): UserRow {
+function mapUserFromPg(r: any, paymentDetails?: Record<string, { iban?: string | null; paypal?: string | null }>): UserRow {
+  const userId = Number(r.id);
+  const extra = paymentDetails ? (paymentDetails[String(userId)] || paymentDetails[userId]) : null;
   return {
     ...r,
-    id: Number(r.id),
+    id: userId,
+    iban: r.iban !== undefined ? r.iban : (extra?.iban ?? null),
+    paypal: r.paypal !== undefined ? r.paypal : (extra?.paypal ?? null),
     is_active_in_list: r.is_active_in_list ? 1 : 0,
     is_volunteer_exempt: r.is_volunteer_exempt ? 1 : 0,
     list_order_override: r.list_order_override !== null ? Number(r.list_order_override) : null,
   };
+}
+
+async function getSupabasePaymentDetails(): Promise<Record<string, { iban?: string | null; paypal?: string | null }>> {
+  if (!supabase) return {};
+  try {
+    const { data } = await supabase
+      .from("app_settings")
+      .select("value")
+      .eq("key", "user_payment_details")
+      .maybeSingle();
+    if (data?.value) {
+      return JSON.parse(data.value);
+    }
+  } catch {}
+  return {};
+}
+
+async function saveSupabasePaymentDetail(userId: number, iban?: string | null, paypal?: string | null): Promise<void> {
+  if (!supabase) return;
+  try {
+    const existing = await getSupabasePaymentDetails();
+    const current = existing[String(userId)] || {};
+    existing[String(userId)] = {
+      iban: iban !== undefined ? iban : (current.iban ?? null),
+      paypal: paypal !== undefined ? paypal : (current.paypal ?? null),
+    };
+    await supabase.from("app_settings").upsert(
+      { key: "user_payment_details", value: JSON.stringify(existing) },
+      { onConflict: "key" }
+    );
+  } catch (e) {
+    console.warn("Failed to persist user_payment_details in app_settings:", e);
+  }
 }
 
 function mapSeasonFromPg(r: any): SeasonRow {
@@ -92,13 +129,14 @@ export const repo = {
       if (!clean) return undefined;
 
       if (supabase) {
+        const paymentMap = await getSupabasePaymentDetails();
         // 1. Exakte E-Mail
         const { data: byEmail } = await supabase
           .from("users")
           .select("*")
           .ilike("email", clean)
           .maybeSingle();
-        if (byEmail) return mapUserFromPg(byEmail);
+        if (byEmail) return mapUserFromPg(byEmail, paymentMap);
 
         // 2. Ohne @ -> z. B. "menck" -> menck@rhtc.de oder Nachname
         if (!clean.includes("@")) {
@@ -107,14 +145,14 @@ export const repo = {
             .select("*")
             .ilike("email", `${clean}@rhtc.de`)
             .maybeSingle();
-          if (byDomain) return mapUserFromPg(byDomain);
+          if (byDomain) return mapUserFromPg(byDomain, paymentMap);
 
           const { data: byLast } = await supabase
             .from("users")
             .select("*")
             .ilike("last_name", clean)
             .maybeSingle();
-          if (byLast) return mapUserFromPg(byLast);
+          if (byLast) return mapUserFromPg(byLast, paymentMap);
         }
 
         // 3. Fallback: Nachname im E-Mail-Präfix (z. B. "owen.menck@gmail.com" -> menck)
@@ -124,7 +162,7 @@ export const repo = {
             .select("*")
             .ilike("last_name", "menck")
             .maybeSingle();
-          if (menckUser) return mapUserFromPg(menckUser);
+          if (menckUser) return mapUserFromPg(menckUser, paymentMap);
         }
 
         return undefined;
@@ -136,13 +174,12 @@ export const repo = {
 
     async findById(id: number): Promise<UserRow | undefined> {
       if (supabase) {
-        const { data, error } = await supabase
-          .from("users")
-          .select("*")
-          .eq("id", id)
-          .maybeSingle();
+        const [paymentMap, { data, error }] = await Promise.all([
+          getSupabasePaymentDetails(),
+          supabase.from("users").select("*").eq("id", id).maybeSingle(),
+        ]);
         if (error || !data) return undefined;
-        return mapUserFromPg(data);
+        return mapUserFromPg(data, paymentMap);
       }
       return sqlite.prepare("SELECT * FROM users WHERE id = ?").get(id) as
         | UserRow
@@ -151,21 +188,24 @@ export const repo = {
 
     async listAll(): Promise<UserRow[]> {
       if (supabase) {
-        const { data, error } = await supabase.from("users").select("*");
+        const [paymentMap, { data, error }] = await Promise.all([
+          getSupabasePaymentDetails(),
+          supabase.from("users").select("*"),
+        ]);
         if (error || !data) return [];
-        return data.map(mapUserFromPg);
+        return data.map((u) => mapUserFromPg(u, paymentMap));
       }
       return sqlite.prepare("SELECT * FROM users").all() as unknown as UserRow[];
     },
 
     async listActive(): Promise<UserRow[]> {
       if (supabase) {
-        const { data, error } = await supabase
-          .from("users")
-          .select("*")
-          .eq("is_active_in_list", true);
+        const [paymentMap, { data, error }] = await Promise.all([
+          getSupabasePaymentDetails(),
+          supabase.from("users").select("*").eq("is_active_in_list", true),
+        ]);
         if (error || !data) return [];
-        return data.map(mapUserFromPg);
+        return data.map((u) => mapUserFromPg(u, paymentMap));
       }
       return sqlite
         .prepare("SELECT * FROM users WHERE is_active_in_list = 1")
@@ -187,26 +227,59 @@ export const repo = {
     }): Promise<UserRow> {
       const now = new Date().toISOString();
       if (supabase) {
-        const { data, error } = await supabase
-          .from("users")
-          .insert({
-            first_name: user.first_name,
-            last_name: user.last_name,
-            email: user.email.trim().toLowerCase(),
-            mobile_number: user.mobile_number || null,
-            iban: user.iban || null,
-            paypal: user.paypal || null,
-            password_hash: user.password_hash,
-            role: user.role || "PLAYER",
-            is_active_in_list: Boolean(user.is_active_in_list ?? true),
-            is_volunteer_exempt: Boolean(user.is_volunteer_exempt ?? false),
-            list_order_override: user.list_order_override ?? null,
-            created_at: now,
-          })
-          .select()
-          .single();
-        if (error) throw new Error(error.message);
-        return mapUserFromPg(data);
+        // Falls users-Tabelle in Supabase iban/paypal bereits als Spalte hat, versuchen; sonst ohne
+        let createdData: any = null;
+        try {
+          const { data, error } = await supabase
+            .from("users")
+            .insert({
+              first_name: user.first_name,
+              last_name: user.last_name,
+              email: user.email.trim().toLowerCase(),
+              mobile_number: user.mobile_number || null,
+              iban: user.iban || null,
+              paypal: user.paypal || null,
+              password_hash: user.password_hash,
+              role: user.role || "PLAYER",
+              is_active_in_list: Boolean(user.is_active_in_list ?? true),
+              is_volunteer_exempt: Boolean(user.is_volunteer_exempt ?? false),
+              list_order_override: user.list_order_override ?? null,
+              created_at: now,
+            })
+            .select()
+            .single();
+          if (error) throw error;
+          createdData = data;
+        } catch (err: any) {
+          // Schema Cache Fehler (Spalte noch nicht in DB): Fallback ohne Spalten und persist in app_settings
+          if (err?.message?.includes("iban") || err?.message?.includes("paypal") || err?.code === "PGRST204") {
+            const { data, error } = await supabase
+              .from("users")
+              .insert({
+                first_name: user.first_name,
+                last_name: user.last_name,
+                email: user.email.trim().toLowerCase(),
+                mobile_number: user.mobile_number || null,
+                password_hash: user.password_hash,
+                role: user.role || "PLAYER",
+                is_active_in_list: Boolean(user.is_active_in_list ?? true),
+                is_volunteer_exempt: Boolean(user.is_volunteer_exempt ?? false),
+                list_order_override: user.list_order_override ?? null,
+                created_at: now,
+              })
+              .select()
+              .single();
+            if (error) throw new Error(error.message);
+            createdData = data;
+            if (user.iban || user.paypal) {
+              await saveSupabasePaymentDetail(Number(data.id), user.iban, user.paypal);
+            }
+          } else {
+            throw new Error(err.message);
+          }
+        }
+        const paymentMap = await getSupabasePaymentDetails();
+        return mapUserFromPg(createdData, paymentMap);
       }
       const res = sqlite
         .prepare(
@@ -235,8 +308,31 @@ export const repo = {
         const payload: Record<string, any> = { ...data };
         if ("is_active_in_list" in payload) payload.is_active_in_list = Boolean(payload.is_active_in_list);
         if ("is_volunteer_exempt" in payload) payload.is_volunteer_exempt = Boolean(payload.is_volunteer_exempt);
+        
+        // Separiere iban und paypal für den Fall, dass die Spalten noch nicht in der Tabelle existieren
+        const hasIban = "iban" in payload;
+        const hasPaypal = "paypal" in payload;
+        const ibanVal = payload.iban;
+        const paypalVal = payload.paypal;
+
+        // Versuch 1: Normaler Update inkl. aller Felder
         const { error } = await supabase.from("users").update(payload).eq("id", id);
-        if (error) throw new Error(error.message);
+        if (error) {
+          // Schema Cache Fehler (Spalte noch nicht in DB): Fallback ohne iban/paypal updaten und in app_settings sichern
+          if (error.message?.includes("iban") || error.message?.includes("paypal") || error.code === "PGRST204") {
+            delete payload.iban;
+            delete payload.paypal;
+            if (Object.keys(payload).length > 0) {
+              const { error: err2 } = await supabase.from("users").update(payload).eq("id", id);
+              if (err2) throw new Error(err2.message);
+            }
+            if (hasIban || hasPaypal) {
+              await saveSupabasePaymentDetail(id, hasIban ? ibanVal : undefined, hasPaypal ? paypalVal : undefined);
+            }
+            return;
+          }
+          throw new Error(error.message);
+        }
         return;
       }
       const sets: string[] = [];
