@@ -33,6 +33,33 @@ function formatEuro(cents) {
   });
 }
 
+function buildPayPalUrl(rawHandleOrEmail, amountCents = null) {
+  if (!rawHandleOrEmail) return "";
+  const cleaned = String(rawHandleOrEmail).trim().replace(/^https?:\/\//i, "").replace(/^www\./i, "");
+  const amountStr = amountCents !== null && amountCents !== undefined ? (amountCents / 100).toFixed(2) : "";
+
+  // Falls es eine E-Mail-Adresse ist (enthält @): paypal.com/paypalme/ oder direkt PayPal Send Link
+  if (cleaned.includes("@")) {
+    const email = cleaned.toLowerCase();
+    // https://www.paypal.com/cgi-bin/webscr?cmd=_xclick&business=...&amount=...&currency_code=EUR
+    const params = new URLSearchParams({
+      cmd: "_xclick",
+      business: email,
+      currency_code: "EUR",
+      item_name: "RHTC Mannschaftskasse Weitergabegebuehr",
+    });
+    if (amountStr) params.set("amount", amountStr);
+    return `https://www.paypal.com/cgi-bin/webscr?${params.toString()}`;
+  }
+
+  // Falls es paypal.me/Name oder nur Name ist
+  let mePath = cleaned;
+  if (!mePath.toLowerCase().startsWith("paypal.me/")) {
+    mePath = `paypal.me/${mePath.replace(/^\/+/, "")}`;
+  }
+  return `https://${mePath}${amountStr ? `/${amountStr}` : ""}`;
+}
+
 function formatDate(iso) {
   return new Date(iso).toLocaleString("de-DE", {
     weekday: "short",
@@ -973,7 +1000,7 @@ function renderTasksTab() {
             ${
               ts.paypal
                 ? `
-                  <a href="https://${ts.paypal.replace(/^https?:\/\//, "")}/${(totalMyOpenCents / 100).toFixed(2)}" target="_blank" rel="noopener" class="btn btn-primary btn-sm" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;background:#0070ba;border-color:#0070ba">
+                  <a href="${buildPayPalUrl(ts.paypal, totalMyOpenCents)}" target="_blank" rel="noopener" class="btn btn-primary btn-sm" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;background:#0070ba;border-color:#0070ba">
                     <span>🅿️</span> Direkt per PayPal zahlen (${formatEuro(totalMyOpenCents)})
                   </a>
                 `
@@ -4412,7 +4439,8 @@ window.openPaymentReminderModal = (eventId) => {
 
   const ts = state.data?.treasurySettings || {};
   const ibanStr = ts.iban ? `\n🏦 IBAN: ${ts.iban}\n👤 Empfänger: ${ts.recipient || "RHTC 2. Herren Kasse"}` : "";
-  const paypalStr = ts.paypal ? `\n💳 PayPal: https://${ts.paypal.replace(/^https?:\/\//, "")}` : "";
+  const paypalUrl = buildPayPalUrl(ts.paypal, due);
+  const paypalStr = paypalUrl ? `\n💳 PayPal: ${paypalUrl}` : "";
   const refText = g ? `Weitergabe ${g.title}` : `Weitergabegebühr`;
 
   const msg = `Moin ${targetUser.first_name},\n\nkurze Erinnerung von der Mannschaftskasse: Für deine Weitergabe beim Spiel „${gameTitle}“ steht noch die Gebühr von ${formatEuro(due)} offen.\n\nBitte überweise den Betrag zeitnah:${ibanStr}${paypalStr}\nVerwendungszweck: ${refText} (${targetUser.last_name})\n\nVielen Dank!`;
@@ -4441,7 +4469,8 @@ window.openPlayerFeeReminderModal = (playerId) => {
 
   const ts = state.data?.treasurySettings || {};
   const ibanStr = ts.iban ? `\n🏦 IBAN: ${ts.iban}\n👤 Empfänger: ${ts.recipient || "RHTC 2. Herren Kasse"}` : "";
-  const paypalStr = ts.paypal ? `\n💳 PayPal: https://${ts.paypal.replace(/^https?:\/\//, "")}` : "";
+  const paypalUrl = buildPayPalUrl(ts.paypal, totalOpenFeeCents);
+  const paypalStr = paypalUrl ? `\n💳 PayPal: ${paypalUrl}` : "";
 
   const msg = `Moin ${p.first_name},\n\nkurze Erinnerung von der Mannschaftskasse: Du hast aktuell ${openEvents.length} offene Weitergabe-Gebühr(en) in Höhe von insgesamt ${formatEuro(totalOpenFeeCents)}.\n\nBitte begleiche den Betrag zeitnah:${ibanStr}${paypalStr}\nVerwendungszweck: Weitergabe-Gebühren ${p.last_name}\n\nVielen Dank!`;
 
