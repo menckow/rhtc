@@ -110,14 +110,17 @@ Das Navigationsmenü öffnet sich mobil und auf dem PC über den Button **`☰ M
   - Dynamischer Anpassung an die gewählte Saison (oder Ewige Tabelle).
 
 ### 6. 👥 Schiedsrichterliste (§ 2) *(Schiriwart & Admin)*
-- Komplette Mannschaftsliste mit Einsatzzählern, aktiven Ansetzungen, Offenen Gebühren und Ehrenamts-Status.
+- Komplette Mannschaftsliste mit Einsatzzählern, aktiven Ansetzungen, Offenen Gebühren, Ehrenamts-Status sowie hinterlegter Bankverbindung (**IBAN & PayPal**).
 - **Bearbeiten-Modal:** Administratoren und Schiedsrichterwarte können bei jedem Spieler:
   - Vor- und Nachname, E-Mail und Mobilnummer bearbeiten
+  - **Bankverbindung (IBAN und PayPal)** für Auszahlungen und Prämien pflegen
   - Rolle und Berechtigungen festlegen
   - Status "Aktiv in Schiedsrichterliste" und "Ehrenamtliche Befreiung (§ 7)" umschalten
   - **Einsätze („eingesetzt“ nach § 1 Abs. 4 / § 2):** Die Anzahl der geleisteten Schiedsrichter-Einsätze kann bei Bedarf manuell angepasst/vorgegeben werden (wird bei manueller Korrektur mit `korr.` gekennzeichnet und direkt vom automatischen Zuteilungs-Algorithmus berücksichtigt).
   - Rotationsreihenfolge (Listen-Position) überschreiben
   - Passwort zurücksetzen
+- **Stammdaten-Pflege durch Spieler:** Spieler können ihre eigene IBAN und PayPal-Adresse auch selbständig über das Profil-Menü („Meine Stammdaten“) eintragen und aktualisieren.
+- **CSV-Export & Import:** IBAN und PayPal sind im CSV-Export der Mannschaftsliste enthalten und werden beim CSV-Import unterstützt.
 
 ### 6. 💰 Kasse & Härtefälle *(Kassenwart & Admin)*
 - **Statistik-Kacheln:** Kassenanteil, offene Forderungen, bezahlte Gebühren, offene Auszahlungstöpfe.

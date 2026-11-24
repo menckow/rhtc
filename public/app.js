@@ -1093,6 +1093,10 @@ function renderPlayersTab() {
   state.data.players.forEach((p, idx) => {
     const isSelf = p.id === state.user.id;
     const isChecked = state.selectedPlayerIds.includes(p.id);
+    const paymentParts = [];
+    if (p.iban) paymentParts.push(`🏦 ${esc(p.iban)}`);
+    if (p.paypal) paymentParts.push(`🅿️ ${esc(p.paypal)}`);
+    const paymentText = paymentParts.join(" &bull; ");
     html += `
       <tr>
         ${
@@ -1104,6 +1108,7 @@ function renderPlayersTab() {
         <td class="cell-main">
           <div><strong>${esc(p.last_name)}, ${esc(p.first_name)}</strong> <span class="badge badge-gray">${roleLabel(p.role)}</span></div>
           <div class="player-meta">${esc(p.email)}${p.mobile_number ? ` &bull; ${esc(p.mobile_number)}` : ""}</div>
+          ${paymentText ? `<div class="player-meta" style="color:var(--text-muted);font-size:0.75rem">${paymentText}</div>` : ""}
         </td>
         <td data-label="Status">
           <div class="player-badges">
@@ -2510,6 +2515,10 @@ function renderModal() {
             <div class="form-group"><label>Nachname</label><input id="pl-last" required /></div>
             <div class="form-group"><label>E-Mail</label><input type="email" id="pl-email" required /></div>
             <div class="form-group"><label>Mobilnummer</label><input type="tel" id="pl-mobile" placeholder="z. B. 0171 1234567" /></div>
+            <div class="grid-2">
+              <div class="form-group"><label>IBAN (Bankverbindung)</label><input type="text" id="pl-iban" placeholder="DE..." /></div>
+              <div class="form-group"><label>PayPal (E-Mail oder Link)</label><input type="text" id="pl-paypal" placeholder="z. B. paypal.me/name" /></div>
+            </div>
             <div class="form-group"><label>Initial-Passwort</label><input id="pl-pass" value="rhtc2026" required /></div>
             <div class="form-group">
               <label>Rolle</label>
@@ -2551,6 +2560,10 @@ function renderModal() {
             <div class="grid-2">
               <div class="form-group"><label>E-Mail</label><input type="email" id="ep-email" value="${esc(p.email)}" required /></div>
               <div class="form-group"><label>Mobilnummer</label><input type="tel" id="ep-mobile" value="${esc(p.mobile_number || "")}" placeholder="z. B. 0171 1234567" /></div>
+            </div>
+            <div class="grid-2">
+              <div class="form-group"><label>IBAN (Bankverbindung)</label><input type="text" id="ep-iban" value="${esc(p.iban || "")}" placeholder="DE..." /></div>
+              <div class="form-group"><label>PayPal (E-Mail oder Link)</label><input type="text" id="ep-paypal" value="${esc(p.paypal || "")}" placeholder="z. B. paypal.me/name" /></div>
             </div>
             <div class="grid-2">
               <div class="form-group">
@@ -2623,6 +2636,16 @@ function renderModal() {
             <div class="form-group">
               <label>Mobilnummer</label>
               <input type="tel" id="prof-mobile" value="${esc(u.mobile_number || "")}" placeholder="z. B. 0171 1234567" />
+            </div>
+            <div class="grid-2">
+              <div class="form-group">
+                <label>IBAN (für Auszahlungen)</label>
+                <input type="text" id="prof-iban" value="${esc(u.iban || "")}" placeholder="DE..." />
+              </div>
+              <div class="form-group">
+                <label>PayPal (für Auszahlungen)</label>
+                <input type="text" id="prof-paypal" value="${esc(u.paypal || "")}" placeholder="z. B. paypal.me/name" />
+              </div>
             </div>
             <div class="form-group">
               <label>Neues Passwort (optional, leer lassen = unverändert)</label>
@@ -2705,6 +2728,8 @@ function renderModal() {
                 </div>
                 <div style="font-size:0.85rem;color:rgba(255,255,255,0.85);margin-top:3px">
                   ${roleLabel(p.role)} &bull; ${esc(p.email)} ${p.mobile_number ? `&bull; 📞 ${esc(p.mobile_number)}` : ""}
+                  ${p.iban ? `<br>🏦 IBAN: ${esc(p.iban)}` : ""}
+                  ${p.paypal ? `${p.iban ? " &bull; " : "<br>"}🅿️ PayPal: ${esc(p.paypal)}` : ""}
                 </div>
                 <div style="font-size:0.75rem;color:rgba(255,255,255,0.7);margin-top:2px">
                   ${isAllTime ? "🏆 Daten über alle Saisons hinweg (Ewige Tabelle)" : `Saison: <strong>${esc(currentSeason?.name || "Aktuell")}</strong>`}
@@ -2884,6 +2909,19 @@ function renderModal() {
                 ${isNetPlus ? `+${formatEuro(netBalanceCents)}` : formatEuro(netBalanceCents)}
               </div>
             </div>
+          </div>
+
+          <!-- Bankverbindung / Auszahlungskonto des Spielers -->
+          <div style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:6px;padding:10px 12px;margin-bottom:16px;font-size:0.83rem">
+            <strong>💳 Auszahlungskonto des Spielers:</strong>
+            ${
+              player.iban || player.paypal
+                ? `<div style="margin-top:4px">
+                    ${player.iban ? `<div>🏦 <strong>IBAN:</strong> <span style="user-select:all">${esc(player.iban)}</span></div>` : ""}
+                    ${player.paypal ? `<div>🅿️ <strong>PayPal:</strong> <span style="user-select:all">${esc(player.paypal)}</span></div>` : ""}
+                  </div>`
+                : `<div style="color:var(--muted);margin-top:2px">Keine Bankverbindung (IBAN / PayPal) hinterlegt.</div>`
+            }
           </div>
 
           <!-- 1. Bereitstehende Topf-Auszahlungen -->
@@ -3518,6 +3556,8 @@ function attachModalHandlers() {
           body: JSON.stringify({
             email: document.getElementById("prof-email").value,
             mobileNumber: document.getElementById("prof-mobile").value,
+            iban: (document.getElementById("prof-iban")?.value || "").trim(),
+            paypal: (document.getElementById("prof-paypal")?.value || "").trim(),
             ...(passVal ? { password: passVal } : {}),
           }),
         });
@@ -3548,6 +3588,8 @@ function attachModalHandlers() {
             lastName: document.getElementById("ep-last").value,
             email: document.getElementById("ep-email").value,
             mobileNumber: document.getElementById("ep-mobile").value,
+            iban: (document.getElementById("ep-iban")?.value || "").trim(),
+            paypal: (document.getElementById("ep-paypal")?.value || "").trim(),
             role: document.getElementById("ep-role").value,
             listOrderOverride: orderVal === "" ? null : Number(orderVal),
             isActiveInList: document.getElementById("ep-active").checked,
@@ -3578,6 +3620,8 @@ function attachModalHandlers() {
             lastName: document.getElementById("pl-last").value,
             email: document.getElementById("pl-email").value,
             mobileNumber: document.getElementById("pl-mobile").value,
+            iban: (document.getElementById("pl-iban")?.value || "").trim(),
+            paypal: (document.getElementById("pl-paypal")?.value || "").trim(),
             password: document.getElementById("pl-pass").value,
             role: document.getElementById("pl-role").value,
             isVolunteerExempt: document.getElementById("pl-exempt").checked,
@@ -3706,6 +3750,8 @@ window.exportPlayersCsv = () => {
     "Vorname",
     "Email",
     "Mobilnummer",
+    "IBAN",
+    "PayPal",
     "Rolle",
     "Aktiv",
     "Ehrenamt_Par7",
@@ -3720,6 +3766,8 @@ window.exportPlayersCsv = () => {
     p.first_name,
     p.email,
     p.mobile_number || "",
+    p.iban || "",
+    p.paypal || "",
     roleLabel(p.role),
     p.is_active_in_list ? "Ja" : "Nein",
     p.is_volunteer_exempt ? "Ja" : "Nein",

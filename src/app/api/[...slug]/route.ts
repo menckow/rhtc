@@ -400,6 +400,8 @@ export async function POST(
     const lastName = String(body.last_name || body.lastName || "").trim();
     const email = String(body.email || "").trim().toLowerCase();
     const mobileNumber = body.mobile_number || body.mobileNumber || null;
+    const iban = body.iban !== undefined ? String(body.iban).trim() || null : null;
+    const paypal = body.paypal !== undefined ? String(body.paypal).trim() || null : null;
     const role = String(body.role || "PLAYER").trim();
     const isVolunteerExempt = body.is_volunteer_exempt ?? body.isVolunteerExempt ?? 0;
     const isActiveInList = body.is_active_in_list ?? body.isActiveInList ?? 1;
@@ -423,6 +425,8 @@ export async function POST(
       last_name: lastName,
       email,
       mobile_number: mobileNumber ? String(mobileNumber).trim() : null,
+      iban,
+      paypal,
       password_hash: defaultPassword,
       role,
       is_volunteer_exempt: isVolunteerExempt,
@@ -477,6 +481,8 @@ export async function POST(
       const lastName = String(r.lastName || "").trim();
       const email = String(r.email || "").trim().toLowerCase();
       const mobileNumber = String(r.mobileNumber || "").trim() || null;
+      const iban = String(r.iban || "").trim() || null;
+      const paypal = String(r.paypal || "").trim() || null;
       const password = String(r.password || "rhtc2026").trim() || "rhtc2026";
       const rawRole = String(r.role || "PLAYER").trim().toUpperCase();
       const role = allowedRoles.includes(rawRole) ? rawRole : "PLAYER";
@@ -498,6 +504,8 @@ export async function POST(
         last_name: lastName,
         email,
         mobile_number: mobileNumber,
+        iban,
+        paypal,
         password_hash: hashPassword(password),
         role,
         is_active_in_list: 1,
@@ -1451,6 +1459,8 @@ export async function PATCH(
     }
     const email = body.email !== undefined ? String(body.email).trim().toLowerCase() : existing.email;
     const mobileNumber = body.mobileNumber !== undefined ? String(body.mobileNumber).trim() || null : existing.mobile_number;
+    const iban = body.iban !== undefined ? String(body.iban).trim() || null : existing.iban;
+    const paypal = body.paypal !== undefined ? String(body.paypal).trim() || null : existing.paypal;
 
     if (!email || !email.includes("@")) {
       return NextResponse.json({ error: "Bitte eine gültige E-Mail-Adresse angeben." }, { status: 400 });
@@ -1468,6 +1478,8 @@ export async function PATCH(
     await repo.users.update(user.id, {
       email,
       mobile_number: mobileNumber,
+      iban,
+      paypal,
       password_hash: newPasswordHash,
     });
     invalidateUserSessionCache(user.id);
@@ -1532,6 +1544,16 @@ export async function PATCH(
     const mobile = body.mobileNumber !== undefined ? body.mobileNumber : body.mobile_number;
     if (mobile !== undefined) {
       updates.mobile_number = String(mobile).trim() || null;
+    }
+
+    const iban = body.iban !== undefined ? body.iban : body.payment_info;
+    if (iban !== undefined) {
+      updates.iban = String(iban).trim() || null;
+    }
+
+    const paypal = body.paypal !== undefined ? body.paypal : body.paypal_me;
+    if (paypal !== undefined) {
+      updates.paypal = String(paypal).trim() || null;
     }
 
     const allowedRoles = ["PLAYER", "SCHIEDSRICHTERWART", "KASSENWART", "VORSTAND", "ADMIN"];

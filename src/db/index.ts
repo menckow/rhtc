@@ -40,6 +40,8 @@ function initSqlite() {
         last_name TEXT NOT NULL,
         email TEXT NOT NULL UNIQUE,
         mobile_number TEXT,
+        iban TEXT,
+        paypal TEXT,
         password_hash TEXT NOT NULL,
         role TEXT NOT NULL DEFAULT 'PLAYER',
         is_active_in_list INTEGER NOT NULL DEFAULT 1,
@@ -110,6 +112,12 @@ function initSqlite() {
     if (!userCols.some((c) => c.name === "mobile_number")) {
       _sqliteInstance.exec("ALTER TABLE users ADD COLUMN mobile_number TEXT;");
     }
+    if (!userCols.some((c) => c.name === "iban")) {
+      _sqliteInstance.exec("ALTER TABLE users ADD COLUMN iban TEXT;");
+    }
+    if (!userCols.some((c) => c.name === "paypal")) {
+      _sqliteInstance.exec("ALTER TABLE users ADD COLUMN paypal TEXT;");
+    }
     const chainCols = _sqliteInstance
       .prepare("PRAGMA table_info(assignment_chains)")
       .all() as Array<{ name: string }>;
@@ -145,6 +153,8 @@ export interface UserRow {
   last_name: string;
   email: string;
   mobile_number: string | null;
+  iban: string | null;
+  paypal: string | null;
   password_hash: string;
   role: "PLAYER" | "SCHIEDSRICHTERWART" | "KASSENWART" | "VORSTAND" | "ADMIN";
   is_active_in_list: number;

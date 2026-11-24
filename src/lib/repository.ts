@@ -177,6 +177,8 @@ export const repo = {
       last_name: string;
       email: string;
       mobile_number?: string | null;
+      iban?: string | null;
+      paypal?: string | null;
       password_hash: string;
       role?: string;
       is_active_in_list?: number | boolean;
@@ -192,6 +194,8 @@ export const repo = {
             last_name: user.last_name,
             email: user.email.trim().toLowerCase(),
             mobile_number: user.mobile_number || null,
+            iban: user.iban || null,
+            paypal: user.paypal || null,
             password_hash: user.password_hash,
             role: user.role || "PLAYER",
             is_active_in_list: Boolean(user.is_active_in_list ?? true),
@@ -206,14 +210,16 @@ export const repo = {
       }
       const res = sqlite
         .prepare(
-          `INSERT INTO users (first_name, last_name, email, mobile_number, password_hash, role, is_active_in_list, is_volunteer_exempt, list_order_override, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          `INSERT INTO users (first_name, last_name, email, mobile_number, iban, paypal, password_hash, role, is_active_in_list, is_volunteer_exempt, list_order_override, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .run(
           user.first_name,
           user.last_name,
           user.email.trim().toLowerCase(),
           user.mobile_number || null,
+          user.iban || null,
+          user.paypal || null,
           user.password_hash,
           user.role || "PLAYER",
           user.is_active_in_list ? 1 : 0,
