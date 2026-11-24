@@ -101,6 +101,12 @@ Das Navigationsmenü öffnet sich mobil und auf dem PC über den Button **`☰ M
   - *Gleicher Rang bei Punktgleichheit:* Haben mehrere Spieler denselben Wert (z. B. 2 Einsätze), belegen alle gleichauf denselben Platz (z. B. Platz 1 geteilt oder 🥈 2.). Alle Erstplatzierten erhalten die entsprechende Auszeichnung.
 - **Umschalter Saison / Ewige Tabelle:** Ermöglicht den Vergleich innerhalb der aktuellen Saison oder über alle bisherigen Saisons hinweg.
 - **Vollständige Mannschaftstabelle:** Durchsuchbar und nach jeder Kennzahl sortierbar, mit optischer Hervorhebung des eigenen Profils („Du“), exakter geteilter Platzierungsberechnung (#) und Vergabe der Auszeichnungs-Badges.
+- **Interaktive Spieler-Einzelsicht (Detail-Modal):** Klick auf einen Spieler (sowohl in den Podium-Karten als auch in der Gesamttabelle) öffnet ein detailliertes Profil mit:
+  - Allen tatsächlich gepfiffenen Spielen (Datum, Gegner, Slot, verdiente Prämie).
+  - Historie übernommener Einsätze (von wem gerettet).
+  - Weitergegebenen Ansetzungen (Grund, Empfänger, Gebührenstatus).
+  - Transparenter Angabe manueller Korrekturen nach § 1 Abs. 4 / § 2.
+  - Dynamischer Anpassung an die gewählte Saison (oder Ewige Tabelle).
 
 ### 6. 👥 Schiedsrichterliste (§ 2) *(Schiriwart & Admin)*
 - Komplette Mannschaftsliste mit Einsatzzählern, aktiven Ansetzungen, Offenen Gebühren und Ehrenamts-Status.

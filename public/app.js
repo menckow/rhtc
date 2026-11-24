@@ -1586,8 +1586,13 @@ function renderPodiumCard({ icon, title, subtitle, badgeName, items, formatVal, 
       ? (champ.ch.currentAssignee ? `Gepfiffen: ${champ.ch.currentAssignee.last_name}, ${champ.ch.currentAssignee.first_name}` : "Status: Offen")
       : badgeName;
 
+    const clickAttr = isJackpot
+      ? (champ.ch.current_assignee_id ? `onclick="openPlayerDetailModal(${champ.ch.current_assignee_id})" role="button" tabindex="0"` : "")
+      : `onclick="openPlayerDetailModal(${champ.id})" role="button" tabindex="0"`;
+    const clickClass = (isJackpot ? champ.ch.current_assignee_id : true) ? "stats-clickable" : "";
+
     champHtml = `
-      <div class="podium-champion">
+      <div class="podium-champion ${clickClass}" ${clickAttr} title="Details zu ${esc(champName)} anzeigen">
         <div class="champion-crown">🥇</div>
         <div class="champion-info">
           <div class="champion-name" title="${esc(champName)}">${esc(champName)}</div>
@@ -1618,8 +1623,12 @@ function renderPodiumCard({ icon, title, subtitle, badgeName, items, formatVal, 
               const sub = isJackpot
                 ? (c.item.ch.currentAssignee ? `Gepfiffen: ${c.item.ch.currentAssignee.last_name}, ${c.item.ch.currentAssignee.first_name}` : "Status: Offen")
                 : badgeName;
+              const clickAttr = isJackpot
+                ? (c.item.ch.current_assignee_id ? `onclick="openPlayerDetailModal(${c.item.ch.current_assignee_id})" role="button" tabindex="0"` : "")
+                : `onclick="openPlayerDetailModal(${c.item.id})" role="button" tabindex="0"`;
+              const clickClass = (isJackpot ? c.item.ch.current_assignee_id : true) ? "stats-clickable" : "";
               return `
-                <div class="champion-multi-item">
+                <div class="champion-multi-item ${clickClass}" ${clickAttr} title="Details zu ${esc(name)} anzeigen">
                   <span class="champion-multi-bullet">🏆</span>
                   <div style="flex:1;min-width:0">
                     <span class="champion-multi-name" title="${esc(name)}">${esc(name)}</span>
@@ -1649,8 +1658,12 @@ function renderPodiumCard({ icon, title, subtitle, badgeName, items, formatVal, 
             const val = isJackpot
               ? formatEuro(item.ch.payout_pool_cents)
               : formatVal(item);
+            const clickAttr = isJackpot
+              ? (item.ch.current_assignee_id ? `onclick="openPlayerDetailModal(${item.ch.current_assignee_id})" role="button" tabindex="0"` : "")
+              : `onclick="openPlayerDetailModal(${item.id})" role="button" tabindex="0"`;
+            const clickClass = (isJackpot ? item.ch.current_assignee_id : true) ? "stats-clickable" : "";
             return `
-              <div class="runner-row">
+              <div class="runner-row ${clickClass}" ${clickAttr} title="Details zu ${esc(name)} anzeigen">
                 <span class="runner-rank" style="min-width:44px;font-size:0.8rem">${rankIcon}</span>
                 <span class="runner-name" title="${esc(name)}">${esc(name)}</span>
                 <span class="runner-val">${esc(val)}</span>
@@ -1802,11 +1815,11 @@ function renderStatsTab() {
               badgesHtml += `<span class="stats-badge-tag stats-badge-purple" title="Meiste Ansetzungen weitergegeben">🏃 Staffel</span>`;
 
             return `
-              <tr class="${isMe ? "stats-row-current-user" : ""}">
+              <tr class="stats-row-clickable ${isMe ? "stats-row-current-user" : ""}" onclick="openPlayerDetailModal(${p.id})" title="Details zu ${esc(fullName(p))} anzeigen">
                 <td data-label="#"><strong>${currentTableRank}</strong></td>
                 <td data-label="Spieler" class="cell-main">
                   <div>
-                    <strong>${esc(p.last_name)}, ${esc(p.first_name)}</strong>
+                    <strong style="color:var(--text);text-decoration:underline;text-decoration-color:rgba(0,0,0,0.2)">${esc(p.last_name)}, ${esc(p.first_name)}</strong>
                     ${isMe ? `<span class="badge badge-gold" style="font-size:0.7rem;margin-left:4px">Du</span>` : ""}
                     ${badgesHtml}
                   </div>
@@ -2388,6 +2401,214 @@ function renderModal() {
               <button type="button" class="btn btn-outline" onclick="closeModal()">Abbrechen</button>
             </div>
           </form>
+        </div>
+      </div>
+    `;
+  }
+
+  if (state.modal.type === "playerDetail") {
+    const p = state.modal.player;
+    const currentSeason = state.data.season;
+    const isAllTime = currentSeason?.id === "all";
+    const games = state.data.games || [];
+
+    // Finde alle Einsätze/Spiele, bei denen p tatsächlich gepfiffen hat
+    // (CONFIRMED_DEPLOYED oder REPORTED_DEPLOYED mit currentAssignee = p)
+    const whistledChains = [];
+    for (const g of games) {
+      for (const ch of g.chains || []) {
+        if (ch.current_assignee_id === p.id && (ch.status === "CONFIRMED_DEPLOYED" || ch.status === "REPORTED_DEPLOYED" || ch.payout_settled)) {
+          whistledChains.push({ g, ch });
+        }
+      }
+    }
+    // Sortiere nach Datum absteigend
+    whistledChains.sort((a, b) => new Date(b.g.kickoff_at).getTime() - new Date(a.g.kickoff_at).getTime());
+
+    // Finde übernommene Einsätze (Retter): Event HANDOFF_ACCEPTED / VOLUNTEER_APPROVED mit to_user_id === p.id und from_user_id !== p.id
+    const takeoverEvents = [];
+    for (const g of games) {
+      for (const ch of g.chains || []) {
+        for (const ev of ch.events || []) {
+          if (ev.to_user_id === p.id && (ev.event_type === "HANDOFF_ACCEPTED" || ev.event_type === "VOLUNTEER_APPROVED") && ev.from_user_id !== p.id) {
+            takeoverEvents.push({ g, ch, ev });
+          }
+        }
+      }
+    }
+    takeoverEvents.sort((a, b) => new Date(b.ev.created_at).getTime() - new Date(a.ev.created_at).getTime());
+
+    // Finde weitergegebene Einsätze (Staffel): Event REGULAR_HANDOFF, HARDSHIP etc. mit from_user_id === p.id
+    const handoffEvents = [];
+    for (const g of games) {
+      for (const ch of g.chains || []) {
+        for (const ev of ch.events || []) {
+          if (ev.from_user_id === p.id && ["REGULAR_HANDOFF", "HARDSHIP", "VOLUNTEER_EXEMPT", "SQUAD_NOMINATION", "VOLUNTEER_AUTO_FORWARD"].includes(ev.event_type)) {
+            handoffEvents.push({ g, ch, ev });
+          }
+        }
+      }
+    }
+    handoffEvents.sort((a, b) => new Date(b.ev.created_at).getTime() - new Date(a.ev.created_at).getTime());
+
+    const isMe = p.id === state.user.id;
+    const initials = ((p.first_name?.[0] || "") + (p.last_name?.[0] || "")).toUpperCase();
+
+    return `
+      <div class="modal-backdrop" onclick="if(event.target===this) closeModal()">
+        <div class="modal" style="max-width:650px;max-height:90vh;overflow-y:auto;padding:24px">
+          
+          <div class="player-detail-hero">
+            <div class="player-detail-header-flex">
+              <div class="player-detail-avatar">${initials}</div>
+              <div style="flex:1;min-width:0">
+                <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                  <h2 style="margin:0;font-size:1.3rem;color:#ffffff">${esc(p.last_name)}, ${esc(p.first_name)}</h2>
+                  ${isMe ? `<span class="badge badge-gold" style="font-size:0.75rem">Du</span>` : ""}
+                </div>
+                <div style="font-size:0.85rem;color:rgba(255,255,255,0.85);margin-top:3px">
+                  ${roleLabel(p.role)} &bull; ${esc(p.email)} ${p.mobile_number ? `&bull; 📞 ${esc(p.mobile_number)}` : ""}
+                </div>
+                <div style="font-size:0.75rem;color:rgba(255,255,255,0.7);margin-top:2px">
+                  ${isAllTime ? "🏆 Daten über alle Saisons hinweg (Ewige Tabelle)" : `Saison: <strong>${esc(currentSeason?.name || "Aktuell")}</strong>`}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="player-detail-metrics">
+            <div class="metric-card">
+              <div class="metric-card-val" style="color:var(--text)">${p.deployedCount}</div>
+              <div class="metric-card-lbl">Gepfiffen ${p.isDeployedOverridden ? `(korr.)` : ""}</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-card-val" style="color:var(--success)">${formatEuro(p.earnedPayoutCents || 0)}</div>
+              <div class="metric-card-lbl">Topf-Prämie</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-card-val" style="color:var(--info)">${p.takeoverCount || 0}×</div>
+              <div class="metric-card-lbl">Gerettet</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-card-val" style="color:var(--warn)">${p.handoffCount || 0}×</div>
+              <div class="metric-card-lbl">Weitergegeben</div>
+            </div>
+          </div>
+
+          ${
+            p.isDeployedOverridden
+              ? `
+                <div class="alert alert-info" style="font-size:0.83rem;margin-bottom:16px">
+                  ℹ️ <strong>Manuelle Anpassung:</strong> Die Einsatzzahl für diesen Spieler wurde durch die Schiedsrichter-Administration manuell auf <strong>${p.deployedCount}</strong> festgelegt (nach § 1 Abs. 4 / § 2).
+                </div>
+              `
+              : ""
+          }
+
+          <!-- 1. Gepfiffene Spiele -->
+          <div class="modal-section-title">
+            <span>🏑 Gepfiffene Spiele &amp; Einsätze (${whistledChains.length})</span>
+          </div>
+          ${
+            whistledChains.length === 0
+              ? `<div style="font-size:0.82rem;color:var(--muted);padding:8px 0;margin-bottom:12px">In dieser Saison noch keine abgeschlossenen Spiele als Schiri geleistet.</div>`
+              : `
+                <div class="detail-item-list">
+                  ${whistledChains
+                    .map(({ g, ch }) => {
+                      const potCents = ch.payout_pool_cents || 0;
+                      return `
+                        <div class="detail-item-card deployed">
+                          <div>
+                            <div style="font-weight:700;color:var(--text)">${esc(g.title)}</div>
+                            <div class="detail-item-meta">
+                              📅 ${formatDate(g.kickoff_at)} &bull; 📍 ${esc(g.location || "RHTC")} &bull; Slot: ${esc(ch.ref_code || `#${ch.slot_number}`)}
+                            </div>
+                          </div>
+                          <div style="text-align:right">
+                            <span class="badge ${ch.status === "CONFIRMED_DEPLOYED" ? "badge-green" : "badge-amber"}">
+                              ${ch.status === "CONFIRMED_DEPLOYED" ? "Gepfiffen ✓" : "Gemeldet"}
+                            </span>
+                            ${potCents > 0 ? `<div style="font-size:0.75rem;color:var(--success);font-weight:700;margin-top:2px">+${formatEuro(potCents)} Prämie</div>` : ""}
+                          </div>
+                        </div>
+                      `;
+                    })
+                    .join("")}
+                </div>
+              `
+          }
+
+          <!-- 2. Übernommene Einsätze (Retter) -->
+          <div class="modal-section-title" style="margin-top:20px">
+            <span>🛡️ Als Retter eingesprungen (${takeoverEvents.length})</span>
+          </div>
+          ${
+            takeoverEvents.length === 0
+              ? `<div style="font-size:0.82rem;color:var(--muted);padding:8px 0;margin-bottom:12px">Noch keine Einsätze von anderen Spielern übernommen.</div>`
+              : `
+                <div class="detail-item-list">
+                  ${takeoverEvents
+                    .map(({ g, ch, ev }) => {
+                      const fromName = ev.fromUser ? fullName(ev.fromUser) : "Teamkamerad";
+                      return `
+                        <div class="detail-item-card takeover">
+                          <div>
+                            <div style="font-weight:700;color:var(--text)">${esc(g.title)}</div>
+                            <div class="detail-item-meta">
+                              Eingesprungen für: <strong>${esc(fromName)}</strong> &bull; am ${formatDate(ev.created_at)}
+                            </div>
+                          </div>
+                          <div style="text-align:right">
+                            <span class="badge badge-blue">Gerettet</span>
+                            ${ch.payout_pool_cents > 0 ? `<div style="font-size:0.75rem;color:var(--success);font-weight:700;margin-top:2px">${formatEuro(ch.payout_pool_cents)} Topf</div>` : ""}
+                          </div>
+                        </div>
+                      `;
+                    })
+                    .join("")}
+                </div>
+              `
+          }
+
+          <!-- 3. Weitergegebene Termine -->
+          <div class="modal-section-title" style="margin-top:20px">
+            <span>🏃 Weitergegebene Ansetzungen (${handoffEvents.length})</span>
+          </div>
+          ${
+            handoffEvents.length === 0
+              ? `<div style="font-size:0.82rem;color:var(--muted);padding:8px 0;margin-bottom:12px">Keine Weitergaben in diesem Zeitraum veranlasst.</div>`
+              : `
+                <div class="detail-item-list">
+                  ${handoffEvents
+                    .map(({ g, ev }) => {
+                      const reason = chainReasonLabel(ev.reason_type, ev.is_short_notice, ev.event_type);
+                      const targetName = ev.toUser ? fullName(ev.toUser) : "Weitergabekette";
+                      return `
+                        <div class="detail-item-card handoff">
+                          <div>
+                            <div style="font-weight:700;color:var(--text)">${esc(g.title)}</div>
+                            <div class="detail-item-meta">
+                              Grund: ${esc(reason)} &bull; Weitergereicht an: <strong>${esc(targetName)}</strong>
+                            </div>
+                            <div class="detail-item-meta">${formatDate(ev.created_at)}</div>
+                          </div>
+                          <div style="text-align:right">
+                            ${chainPaymentBadge(ev)}
+                            <div style="font-size:0.75rem;color:var(--muted);margin-top:2px">Gebühr: ${formatEuro(ev.fee_total_cents || 0)}</div>
+                          </div>
+                        </div>
+                      `;
+                    })
+                    .join("")}
+                </div>
+              `
+          }
+
+          <div class="btn-row" style="margin-top:24px;border-top:1px solid var(--border);padding-top:14px">
+            <button type="button" class="btn btn-primary" onclick="closeModal()" style="margin-left:auto">Schließen</button>
+          </div>
+
         </div>
       </div>
     `;
@@ -3460,6 +3681,14 @@ window.copyChatMsg = () => {
   alert("Text für den Gruppenchat kopiert!");
 };
 
+function openPlayerDetailModal(playerId) {
+  const p = (state.data?.players || []).find((u) => u.id === Number(playerId));
+  if (!p) return;
+  state.modal = { type: "playerDetail", player: p };
+  render();
+}
+
+window.openPlayerDetailModal = openPlayerDetailModal;
 window.openHandoffModal = openHandoffModal;
 window.openAddGameModal = openAddGameModal;
 window.openEditGameModal = openEditGameModal;
