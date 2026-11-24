@@ -507,6 +507,20 @@ export const repo = {
   },
 
   chains: {
+    async listAll(): Promise<ChainRow[]> {
+      if (supabase) {
+        const { data, error } = await supabase
+          .from("assignment_chains")
+          .select("*")
+          .order("id", { ascending: true });
+        if (error || !data) return [];
+        return data.map(mapChainFromPg);
+      }
+      return sqlite
+        .prepare("SELECT * FROM assignment_chains ORDER BY id ASC")
+        .all() as unknown as ChainRow[];
+    },
+
     async listByGameIds(gameIds: number[]): Promise<ChainRow[]> {
       if (gameIds.length === 0) return [];
       if (supabase) {
@@ -614,6 +628,20 @@ export const repo = {
   },
 
   events: {
+    async listAll(): Promise<EventRow[]> {
+      if (supabase) {
+        const { data, error } = await supabase
+          .from("handoff_events")
+          .select("*")
+          .order("id", { ascending: false });
+        if (error || !data) return [];
+        return data.map(mapEventFromPg);
+      }
+      return sqlite
+        .prepare("SELECT * FROM handoff_events ORDER BY id DESC")
+        .all() as unknown as EventRow[];
+    },
+
     async listByGameIds(gameIds: number[]): Promise<EventRow[]> {
       if (gameIds.length === 0) return [];
       if (supabase) {

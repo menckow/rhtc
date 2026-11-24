@@ -120,8 +120,15 @@ Das Navigationsmenü öffnet sich mobil und auf dem PC über den Button **`☰ M
 
 ### 6. 💰 Kasse & Härtefälle *(Kassenwart & Admin)*
 - **Statistik-Kacheln:** Kassenanteil, offene Forderungen, bezahlte Gebühren, offene Auszahlungstöpfe.
+- **⚖️ Spieler-Salden & Sammelabwicklung (Neu):**
+  - Übersicht aller Spieler mit offenem Topf-Guthaben (aus bestätigten Einsätzen) und/oder offenen Weitergabe-Gebühren.
+  - Anzeige des Netto-Saldos (Auszahlungsguthaben vs. Nachforderung).
+  - **Sammelabwicklungs-Modal:** Ermöglicht dem Kassenwart wahlweise:
+    - *Direkte Verrechnung:* Topf-Guthaben gleicht offene Weitergabe-Gebühren aus, nur der verbleibende Netto-Saldo wird ausbezahlt bzw. bleibt offen.
+    - *Reine Topf-Auszahlung:* Schnelle Sammelauszahlung aller bereitstehenden Töpfe ohne Berührung der Gebühren.
+  - Revisionssichere Protokollierung in den System-Events (§ 6).
 - **Tabelle Weitergabe-Zahlungen:** Status offener 15 € Gebühren und Härtefallprüfung.
-- **Tabelle Auszahlungstöpfe:** Zeigt für jeden Strang den tatsächlichen Schiedsrichter und erlaubt die Auszahlung der Prämie nach bestätigtem Einsatz.
+- **Tabelle Auszahlungstöpfe:** Zeigt für jeden Strang den tatsächlichen Schiedsrichter und erlaubt die Einzelauszahlung der Prämie nach bestätigtem Einsatz.
 - CSV-Export für die Mannschaftskasse.
 
 ### 7. 📄 Dokumentation (§ 6) *(Schiriwart & Admin)*

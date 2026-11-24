@@ -1270,6 +1270,130 @@ export async function POST(
     return NextResponse.json({ ok: true });
   }
 
+  // 19. /api/treasury/settle-player (Sammelabwicklung & Verrechnung für einen Spieler)
+  if (path === "/treasury/settle-player") {
+    if (user.role !== "KASSENWART" && user.role !== "ADMIN") {
+      return NextResponse.json({ error: "Keine Berechtigung." }, { status: 403 });
+    }
+    const playerId = Number(body.playerId);
+    const offsetOpenFees = Boolean(body.offsetOpenFees); // Ob offene Gebühren verrechnet werden sollen
+
+    if (!playerId) {
+      return NextResponse.json({ error: "Keine Spieler-ID angegeben." }, { status: 400 });
+    }
+    const targetPlayer = await repo.users.findById(playerId);
+    if (!targetPlayer) {
+      return NextResponse.json({ error: "Spieler nicht gefunden." }, { status: 404 });
+    }
+
+    // 1. Finde alle berechtigten, noch nicht ausgezahlten Töpfe des Spielers
+    // (CONFIRMED_DEPLOYED, payout_settled != 1, payout_pool_cents > 0)
+    const allChains = await repo.chains.listAll();
+    const readyChains = allChains.filter(
+      (c) =>
+        c.current_assignee_id === playerId &&
+        c.status === "CONFIRMED_DEPLOYED" &&
+        !c.payout_settled &&
+        c.payout_pool_cents > 0
+    );
+
+    const totalPayoutCreditCents = readyChains.reduce(
+      (acc, c) => acc + (c.payout_pool_cents || 0),
+      0
+    );
+
+    // 2. Finde alle offenen Weitergabe-Gebühren des Spielers
+    const allEvents = await repo.events.listAll();
+    const openFeeEvents = allEvents
+      .filter((e) => e.from_user_id === playerId && e.payment_status === "OPEN")
+      .sort((a, b) => a.id - b.id); // Älteste zuerst
+
+    const totalOpenFeeCents = openFeeEvents.reduce(
+      (acc, e) => acc + Math.max(0, (e.fee_total_cents || 0) - (e.waived_amount_cents || 0)),
+      0
+    );
+
+    if (readyChains.length === 0 && openFeeEvents.length === 0) {
+      return NextResponse.json({ error: "Keine offenen Posten für diesen Spieler vorhanden." }, { status: 400 });
+    }
+
+    let settledPoolCount = 0;
+    let paidFeeCount = 0;
+    let totalOffsetAmountCents = 0;
+    let netPayoutCents = totalPayoutCreditCents;
+
+    // A: Alle berechtigten Töpfe als ausgezahlt markieren
+    for (const ch of readyChains) {
+      await repo.chains.update(ch.id, { payout_settled: 1 });
+      await repo.events.create({
+        chain_id: ch.id,
+        game_id: ch.game_id,
+        event_type: "PAYOUT_SETTLED",
+        from_user_id: user.id,
+        to_user_id: playerId,
+        public_note: `Topf-Auszahlung von ${(ch.payout_pool_cents / 100).toFixed(2)} € (Sammelabwicklung)`,
+      });
+      settledPoolCount++;
+    }
+
+    // B: Falls Verrechnung gewünscht und Guthaben vorhanden ist
+    if (offsetOpenFees && totalPayoutCreditCents > 0 && openFeeEvents.length > 0) {
+      let remainingCredit = totalPayoutCreditCents;
+
+      for (const ev of openFeeEvents) {
+        const feeDue = Math.max(0, (ev.fee_total_cents || 0) - (ev.waived_amount_cents || 0));
+        if (feeDue <= 0) continue;
+
+        if (remainingCredit >= feeDue) {
+          // Gebühr vollständig durch Guthaben beglichen
+          await repo.events.update(ev.id, { payment_status: "PAID" });
+          remainingCredit -= feeDue;
+          totalOffsetAmountCents += feeDue;
+          paidFeeCount++;
+        } else {
+          // Teilverrechnung: Erhöhe Erlass / Verrechnung um das verbleibende Guthaben
+          const currentWaived = ev.waived_amount_cents || 0;
+          await repo.events.update(ev.id, {
+            waived_amount_cents: currentWaived + remainingCredit,
+            // bleibt OPEN für die Restsumme
+          });
+          totalOffsetAmountCents += remainingCredit;
+          remainingCredit = 0;
+          break;
+        }
+      }
+      netPayoutCents = Math.max(0, totalPayoutCreditCents - totalOffsetAmountCents);
+    }
+
+    // Revisionssichere Dokumentation der Sammelabwicklung
+    if (settledPoolCount > 0 || paidFeeCount > 0) {
+      const summaryMsg = offsetOpenFees
+        ? `Sammelabwicklung mit Verrechnung: ${(totalPayoutCreditCents / 100).toFixed(2)} € Topfguthaben verrechnet mit ${(totalOffsetAmountCents / 100).toFixed(2)} € Gebühren. Netto-Auszahlung: ${(netPayoutCents / 100).toFixed(2)} €.`
+        : `Sammelauszahlung ohne Verrechnung: ${settledPoolCount} Töpfe über ${(totalPayoutCreditCents / 100).toFixed(2)} € an ${targetPlayer.first_name} ${targetPlayer.last_name} ausgezahlt.`;
+
+      // System-Event zur Dokumentation
+      const dummyChainId = readyChains[0]?.id || openFeeEvents[0]?.chain_id || 1;
+      const dummyGameId = readyChains[0]?.game_id || openFeeEvents[0]?.game_id || 1;
+      await repo.events.create({
+        chain_id: dummyChainId,
+        game_id: dummyGameId,
+        event_type: "PAYOUT_SETTLED",
+        from_user_id: user.id,
+        to_user_id: playerId,
+        public_note: summaryMsg,
+      });
+    }
+
+    return NextResponse.json({
+      ok: true,
+      settledPoolCount,
+      paidFeeCount,
+      totalPayoutCreditCents,
+      totalOffsetAmountCents,
+      netPayoutCents,
+    });
+  }
+
   return NextResponse.json({ error: "Route nicht gefunden." }, { status: 404 });
   } catch (err: any) {
     console.error("POST error:", err);

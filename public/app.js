@@ -1028,7 +1028,7 @@ function renderPlayersTab() {
 }
 
 function renderTreasuryTab() {
-  const isKassenwart = state.user.role === "KASSENWART";
+  const isKassenwart = state.user.role === "KASSENWART" || state.user.role === "ADMIN";
   const s = state.data.summary;
 
   const paymentEvents = state.data.events.filter(
@@ -1040,6 +1040,47 @@ function renderTreasuryTab() {
       if (ch.payout_pool_cents > 0) payoutChains.push({ g, ch });
     }
   }
+
+  // Berechnung der Salden pro Spieler (für Sammelabwicklung & Verrechnung)
+  const playerBalances = [];
+  for (const p of state.data.players || []) {
+    // 1. Offenes Guthaben: Töpfe, bei denen der Spieler Einsatz geleistet hat (CONFIRMED_DEPLOYED) und payout_settled != 1
+    const playerReadyChains = payoutChains.filter(
+      ({ ch }) =>
+        ch.current_assignee_id === p.id &&
+        ch.status === "CONFIRMED_DEPLOYED" &&
+        !ch.payout_settled
+    );
+    const readyPayoutCents = playerReadyChains.reduce(
+      (acc, { ch }) => acc + (ch.payout_pool_cents || 0),
+      0
+    );
+
+    // 2. Offene Weitergabe-Gebühren des Spielers
+    const playerOpenEvents = paymentEvents.filter(
+      (e) => e.from_user_id === p.id && e.payment_status === "OPEN"
+    );
+    const openFeeCents = playerOpenEvents.reduce(
+      (acc, e) => acc + Math.max(0, (e.fee_total_cents || 0) - (e.waived_amount_cents || 0)),
+      0
+    );
+
+    // Nur Spieler aufführen, die entweder offenes Guthaben oder offene Gebühren haben
+    if (readyPayoutCents > 0 || openFeeCents > 0) {
+      const netBalanceCents = readyPayoutCents - openFeeCents; // positiv = Auszahlungsguthaben, negativ = Schulden an Kasse
+      playerBalances.push({
+        player: p,
+        readyPayoutCents,
+        openFeeCents,
+        netBalanceCents,
+        readyChains: playerReadyChains,
+        openEvents: playerOpenEvents,
+      });
+    }
+  }
+
+  // Sortiere Spieler mit Aktionsbedarf nach Relevanz (höchstes Guthaben/Differenz zuerst)
+  playerBalances.sort((a, b) => b.readyPayoutCents - a.readyPayoutCents || b.openFeeCents - a.openFeeCents);
 
   let html = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
@@ -1063,6 +1104,90 @@ function renderTreasuryTab() {
         <div class="stat-label">Offene Auszahlungstöpfe</div>
         <div class="stat-value" style="color:var(--primary)">${formatEuro(s.totalPayoutPoolOpenCents)}</div>
       </div>
+    </div>
+
+    <!-- Neue Sektion: Spieler-Salden & Sammelabwicklung -->
+    <div class="card" style="overflow-x:auto;border-top:3px solid var(--primary);margin-top:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px">
+        <div>
+          <h3 style="margin:0;font-size:1rem;display:flex;align-items:center;gap:6px">
+            <span>⚖️ Spieler-Salden &amp; Sammelabwicklung</span>
+            <span class="badge badge-gold" style="font-size:0.75rem">${playerBalances.length} ${playerBalances.length === 1 ? "Spieler" : "Spieler"} mit Saldo</span>
+          </h3>
+          <p style="font-size:0.82rem;color:var(--muted);margin:3px 0 0 0">
+            Hier können offene Topf-Guthaben mit offenen Weitergabe-Gebühren direkt verrechnet oder in einem Schritt gesammelt ausgezahlt werden.
+          </p>
+        </div>
+      </div>
+
+      ${
+        playerBalances.length === 0
+          ? `<p style="color:var(--muted);margin:12px 0 4px">Aktuell keine offenen Spielerguthaben oder ausstehenden Gebühren vorhanden.</p>`
+          : `
+            <table class="responsive-table">
+              <thead>
+                <tr>
+                  <th>Spieler</th>
+                  <th>Topf-Guthaben (bereit)</th>
+                  <th>Offene Gebühren</th>
+                  <th>Netto-Saldo</th>
+                  ${isKassenwart ? `<th>Sammel-Aktion</th>` : ""}
+                </tr>
+              </thead>
+              <tbody>
+                ${playerBalances
+                  .map((b) => {
+                    const isNetPlus = b.netBalanceCents > 0;
+                    const isNetZero = b.netBalanceCents === 0;
+                    const isNetMinus = b.netBalanceCents < 0;
+
+                    const saldoClass = isNetPlus ? "color:var(--success)" : isNetMinus ? "color:var(--danger)" : "color:var(--muted)";
+                    const saldoText = isNetPlus
+                      ? `+${formatEuro(b.netBalanceCents)} (Auszahlung)`
+                      : isNetMinus
+                      ? `${formatEuro(b.netBalanceCents)} (Nachforderung)`
+                      : `0,00 € (Ausgeglichen)`;
+
+                    return `
+                      <tr>
+                        <td class="cell-main" data-label="Spieler">
+                          <strong>${esc(b.player.last_name)}, ${esc(b.player.first_name)}</strong>
+                          <div class="player-meta">${roleLabel(b.player.role)} &bull; ${esc(b.player.email)}</div>
+                        </td>
+                        <td data-label="Topf-Guthaben">
+                          ${
+                            b.readyPayoutCents > 0
+                              ? `<strong style="color:var(--success)">${formatEuro(b.readyPayoutCents)}</strong> <span style="font-size:0.75rem;color:var(--muted)">(${b.readyChains.length} ${b.readyChains.length === 1 ? "Topf" : "Töpfe"})</span>`
+                              : `<span style="color:var(--muted)">0,00 €</span>`
+                          }
+                        </td>
+                        <td data-label="Offene Gebühren">
+                          ${
+                            b.openFeeCents > 0
+                              ? `<strong style="color:var(--danger)">${formatEuro(b.openFeeCents)}</strong> <span style="font-size:0.75rem;color:var(--muted)">(${b.openEvents.length}× offen)</span>`
+                              : `<span style="color:var(--muted)">0,00 €</span>`
+                          }
+                        </td>
+                        <td data-label="Netto-Saldo">
+                          <strong style="${saldoClass};font-size:0.95rem">${saldoText}</strong>
+                        </td>
+                        ${
+                          isKassenwart
+                            ? `<td data-label="Sammel-Aktion">
+                                <button class="btn btn-primary btn-sm" onclick="openSettlePlayerModal(${b.player.id})" title="Abrechnung & Verrechnung für ${esc(fullName(b.player))} öffnen">
+                                  Abrechnen / Verrechnen
+                                </button>
+                              </td>`
+                            : ""
+                        }
+                      </tr>
+                    `;
+                  })
+                  .join("")}
+              </tbody>
+            </table>
+          `
+      }
     </div>
 
     <div class="card" style="overflow-x:auto">
@@ -2614,6 +2739,152 @@ function renderModal() {
     `;
   }
 
+  if (state.modal.type === "settlePlayer") {
+    const { player, readyChains, openEvents, totalPayoutCreditCents, totalOpenFeeCents, netBalanceCents } = state.modal;
+
+    const isNetPlus = netBalanceCents > 0;
+    const isNetZero = netBalanceCents === 0;
+    const isNetMinus = netBalanceCents < 0;
+
+    return `
+      <div class="modal-backdrop" onclick="if(event.target===this) closeModal()">
+        <div class="modal" style="max-width:580px;max-height:90vh;overflow-y:auto;padding:24px">
+          <h3 style="margin-top:0;font-size:1.15rem;display:flex;align-items:center;gap:6px">
+            <span>⚖️ Kassen-Abrechnung &amp; Verrechnung</span>
+          </h3>
+          <p style="font-size:0.86rem;color:var(--muted);margin-top:2px">
+            Spieler: <strong>${esc(player.last_name)}, ${esc(player.first_name)}</strong> (${roleLabel(player.role)})
+          </p>
+
+          <!-- Saldo-Kachel -->
+          <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px 14px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+            <div>
+              <div style="font-size:0.75rem;color:var(--muted);text-transform:uppercase;font-weight:600">Topf-Guthaben (bereit)</div>
+              <div style="font-size:1.1rem;font-weight:700;color:var(--success)">+${formatEuro(totalPayoutCreditCents)}</div>
+            </div>
+            <div>
+              <div style="font-size:0.75rem;color:var(--muted);text-transform:uppercase;font-weight:600">Offene Gebühren</div>
+              <div style="font-size:1.1rem;font-weight:700;color:var(--danger)">-${formatEuro(totalOpenFeeCents)}</div>
+            </div>
+            <div style="border-left:2px solid #cbd5e1;padding-left:14px">
+              <div style="font-size:0.75rem;color:var(--muted);text-transform:uppercase;font-weight:600">Netto-Saldo</div>
+              <div style="font-size:1.25rem;font-weight:800;color:${isNetPlus ? "var(--success)" : isNetMinus ? "var(--danger)" : "var(--muted)"}">
+                ${isNetPlus ? `+${formatEuro(netBalanceCents)}` : formatEuro(netBalanceCents)}
+              </div>
+            </div>
+          </div>
+
+          <!-- 1. Bereitstehende Topf-Auszahlungen -->
+          <div style="font-size:0.88rem;font-weight:700;margin:12px 0 6px;color:var(--text)">
+            💰 Bereitstehende Topf-Guthaben (${readyChains.length})
+          </div>
+          ${
+            readyChains.length === 0
+              ? `<div style="font-size:0.8rem;color:var(--muted);margin-bottom:10px">Kein ausstehendes Topf-Guthaben vorhanden.</div>`
+              : `
+                <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px">
+                  ${readyChains
+                    .map(({ g, ch }) => `
+                      <div style="background:#ffffff;border:1px solid var(--border);border-left:3px solid var(--success);border-radius:6px;padding:6px 10px;font-size:0.82rem;display:flex;justify-content:space-between;align-items:center">
+                        <div>
+                          <strong>${esc(g.title)}</strong> (Slot ${ch.slot_number}${ch.ref_code ? ` / ${esc(ch.ref_code)}` : ""})
+                          <div style="color:var(--muted);font-size:0.75rem">${formatDate(g.kickoff_at)} &bull; Gepfiffen ✓</div>
+                        </div>
+                        <strong style="color:var(--success)">+${formatEuro(ch.payout_pool_cents)}</strong>
+                      </div>
+                    `)
+                    .join("")}
+                </div>
+              `
+          }
+
+          <!-- 2. Offene Weitergabe-Gebühren -->
+          <div style="font-size:0.88rem;font-weight:700;margin:14px 0 6px;color:var(--text)">
+            ⚠️ Offene Weitergabe-Gebühren (${openEvents.length})
+          </div>
+          ${
+            openEvents.length === 0
+              ? `<div style="font-size:0.8rem;color:var(--muted);margin-bottom:14px">Keine offenen Gebühren bei diesem Spieler.</div>`
+              : `
+                <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px">
+                  ${openEvents
+                    .map((ev) => {
+                      const due = Math.max(0, (ev.fee_total_cents || 0) - (ev.waived_amount_cents || 0));
+                      return `
+                        <div style="background:#ffffff;border:1px solid var(--border);border-left:3px solid var(--danger);border-radius:6px;padding:6px 10px;font-size:0.82rem;display:flex;justify-content:space-between;align-items:center">
+                          <div>
+                            Weitergabe am ${formatDate(ev.created_at)}
+                            ${ev.public_note ? `<div style="color:var(--muted);font-size:0.75rem">Hinweis: „${esc(ev.public_note)}“</div>` : ""}
+                          </div>
+                          <strong style="color:var(--danger)">-${formatEuro(due)}</strong>
+                        </div>
+                      `;
+                    })
+                    .join("")}
+                </div>
+              `
+          }
+
+          <!-- Auswahl der Aktion -->
+          <div style="background:#fffdf4;border:1px solid var(--gold);border-radius:8px;padding:12px;margin:16px 0;font-size:0.84rem">
+            <strong style="display:block;margin-bottom:6px;color:#92400e">Abrechnungs-Optionen für Kassenwart:</strong>
+            ${
+              totalPayoutCreditCents > 0 && totalOpenFeeCents > 0
+                ? `
+                  <div style="margin-bottom:6px">
+                    <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer">
+                      <input type="radio" name="settle-mode" id="settle-mode-offset" value="offset" checked style="margin-top:2px" />
+                      <div>
+                        <strong>Guthaben &amp; Gebühren direkt verrechnen (Empfohlen)</strong>
+                        <div style="font-size:0.78rem;color:var(--muted)">
+                          ${
+                            isNetPlus
+                              ? `Die ${formatEuro(totalOpenFeeCents)} Gebühren werden als bezahlt verbucht. Der verbleibende Restbetrag von <strong>${formatEuro(netBalanceCents)}</strong> wird als Netto-Guthaben an den Spieler ausgezahlt.`
+                              : isNetZero
+                              ? `Topf-Guthaben und Gebühren heben sich gegenseitig vollständig auf (0,00 € Auszahlung). Alle offenen Gebühren werden als bezahlt verbucht.`
+                              : `Das gesamte Topf-Guthaben (${formatEuro(totalPayoutCreditCents)}) wird auf die Gebühren angerechnet. Der verbleibende Restbetrag von <strong>${formatEuro(Math.abs(netBalanceCents))}</strong> bleibt als offene Gebühr bestehen.`
+                          }
+                        </div>
+                      </div>
+                    </label>
+                  </div>
+                  <div>
+                    <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer">
+                      <input type="radio" name="settle-mode" id="settle-mode-raw" value="raw" style="margin-top:2px" />
+                      <div>
+                        <strong>Reine Topf-Auszahlung (ohne Verrechnung)</strong>
+                        <div style="font-size:0.78rem;color:var(--muted)">
+                          Zahlt das gesamte Topf-Guthaben von <strong>${formatEuro(totalPayoutCreditCents)}</strong> vollständig aus. Die offenen Gebühren (${formatEuro(totalOpenFeeCents)}) bleiben unberührt.
+                        </div>
+                      </div>
+                    </label>
+                  </div>
+                `
+                : totalPayoutCreditCents > 0
+                ? `
+                  <input type="hidden" name="settle-mode" id="settle-mode-raw" value="raw" />
+                  <div>Reine Auszahlung des Topf-Guthabens von <strong>${formatEuro(totalPayoutCreditCents)}</strong> an den Spieler. (Keine offenen Gebühren vorhanden)</div>
+                `
+                : `
+                  <input type="hidden" name="settle-mode" id="settle-mode-offset" value="offset" />
+                  <div>Der Spieler hat offene Gebühren (${formatEuro(totalOpenFeeCents)}), aber kein bereitstehendes Topf-Guthaben zur Verrechnung. Gebühren können über die Tabelle einzeln oder per Zahlungseingang beglichen werden.</div>
+                `
+            }
+          </div>
+
+          <div class="btn-row" style="margin-top:20px;border-top:1px solid var(--border);padding-top:12px">
+            ${
+              totalPayoutCreditCents > 0
+                ? `<button type="button" class="btn btn-success" onclick="executeSettlePlayer(${player.id})">Abrechnung durchführen</button>`
+                : ""
+            }
+            <button type="button" class="btn btn-outline" onclick="closeModal()">Abbrechen</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   if (state.modal.type === "hardship") {
     const ev = state.modal.ev;
     return `
@@ -3636,6 +3907,76 @@ window.submitHardship = async (eventId, decision) => {
 window.settlePayout = async (chainId) => {
   await api(`/api/chains/${chainId}/settle-payout`, { method: "POST" });
   await loadDashboard();
+};
+
+window.openSettlePlayerModal = (playerId) => {
+  const p = (state.data?.players || []).find((u) => u.id === Number(playerId));
+  if (!p) return;
+
+  // Sammle alle bereiten Töpfe
+  const readyChains = [];
+  for (const g of state.data.games) {
+    for (const ch of g.chains) {
+      if (
+        ch.current_assignee_id === p.id &&
+        ch.status === "CONFIRMED_DEPLOYED" &&
+        !ch.payout_settled &&
+        ch.payout_pool_cents > 0
+      ) {
+        readyChains.push({ g, ch });
+      }
+    }
+  }
+
+  // Sammle alle offenen Weitergabe-Gebühren
+  const openEvents = (state.data.events || []).filter(
+    (e) => e.from_user_id === p.id && e.payment_status === "OPEN"
+  );
+
+  const totalPayoutCreditCents = readyChains.reduce(
+    (acc, { ch }) => acc + (ch.payout_pool_cents || 0),
+    0
+  );
+  const totalOpenFeeCents = openEvents.reduce(
+    (acc, e) => acc + Math.max(0, (e.fee_total_cents || 0) - (e.waived_amount_cents || 0)),
+    0
+  );
+  const netBalanceCents = totalPayoutCreditCents - totalOpenFeeCents;
+
+  state.modal = {
+    type: "settlePlayer",
+    player: p,
+    readyChains,
+    openEvents,
+    totalPayoutCreditCents,
+    totalOpenFeeCents,
+    netBalanceCents,
+  };
+  render();
+};
+
+window.executeSettlePlayer = async (playerId) => {
+  const offsetRadio = document.getElementById("settle-mode-offset");
+  const offsetOpenFees = offsetRadio ? offsetRadio.checked : false;
+
+  try {
+    const res = await api("/api/treasury/settle-player", {
+      method: "POST",
+      body: JSON.stringify({
+        playerId,
+        offsetOpenFees,
+      }),
+    });
+    state.modal = null;
+    await loadDashboard();
+
+    const info = offsetOpenFees
+      ? `Sammelabwicklung erfolgreich!\n\nVerrechnete Gebühren: ${formatEuro(res.totalOffsetAmountCents)}\nAusbezahltes Netto-Guthaben: ${formatEuro(res.netPayoutCents)}`
+      : `Sammelauszahlung erfolgreich!\n\nAusbezahlte Töpfe: ${res.settledPoolCount} (${formatEuro(res.totalPayoutCreditCents)})`;
+    alert(info);
+  } catch (err) {
+    alert(err.message);
+  }
 };
 
 window.setChainFilter = (f) => {
