@@ -33,20 +33,21 @@ function formatEuro(cents) {
   });
 }
 
-function buildPayPalUrl(rawHandleOrEmail, amountCents = null) {
+function buildPayPalUrl(rawHandleOrEmail, amountCents = null, noteOrRef = null) {
   if (!rawHandleOrEmail) return "";
   const cleaned = String(rawHandleOrEmail).trim().replace(/^https?:\/\//i, "").replace(/^www\./i, "");
   const amountStr = amountCents !== null && amountCents !== undefined ? (amountCents / 100).toFixed(2) : "";
+  const itemName = noteOrRef ? `RHTC Weitergabe ${noteOrRef}` : "RHTC Mannschaftskasse Weitergabegebuehr";
 
   // Falls es eine E-Mail-Adresse ist (enthält @): paypal.com/paypalme/ oder direkt PayPal Send Link
   if (cleaned.includes("@")) {
     const email = cleaned.toLowerCase();
-    // https://www.paypal.com/cgi-bin/webscr?cmd=_xclick&business=...&amount=...&currency_code=EUR
+    // https://www.paypal.com/cgi-bin/webscr?cmd=_xclick&business=...&amount=...&currency_code=EUR&item_name=...
     const params = new URLSearchParams({
       cmd: "_xclick",
       business: email,
       currency_code: "EUR",
-      item_name: "RHTC Mannschaftskasse Weitergabegebuehr",
+      item_name: itemName,
     });
     if (amountStr) params.set("amount", amountStr);
     return `https://www.paypal.com/cgi-bin/webscr?${params.toString()}`;
@@ -943,6 +944,11 @@ function renderTasksTab() {
       (acc, e) => acc + (e.fee_total_cents - (e.waived_amount_cents || 0)),
       0
     );
+    const myOpenRefCodes = myOpenPayments.map((ev) => {
+      const g = state.data?.games?.find((game) => game.id === ev.game_id);
+      const ch = g?.chains?.find((c) => c.id === ev.chain_id);
+      return ch?.ref_code || (ch?.slot_number ? `Slot ${ch.slot_number}` : "");
+    }).filter(Boolean);
 
     html += `
       <div class="card" style="border-left:4px solid var(--danger);background:#fff9f9">
@@ -962,14 +968,27 @@ function renderTasksTab() {
           ${myOpenPayments
             .map((ev) => {
               const g = state.data?.games?.find((game) => game.id === ev.game_id);
+              const ch = g?.chains?.find((c) => c.id === ev.chain_id);
+              const refCode = ch?.ref_code || (ch?.slot_number ? `Slot ${ch.slot_number}` : "");
               const due = ev.fee_total_cents - (ev.waived_amount_cents || 0);
+              const payUrl = ts.paypal ? buildPayPalUrl(ts.paypal, due, `${refCode ? `${refCode} ` : ""}${g?.title || ""}`.trim()) : "";
               return `
                 <div style="background:#ffffff;border:1px solid #fed7d7;border-radius:6px;padding:8px 12px;display:flex;justify-content:space-between;align-items:center;font-size:0.85rem;flex-wrap:wrap;gap:6px">
                   <div>
-                    <strong>${esc(g?.title || "Schiri-Spiel")}</strong>
-                    <div style="color:var(--muted);font-size:0.75rem">Weitergabe am ${formatDate(ev.created_at)} ${ev.public_note ? `&bull; „${esc(ev.public_note)}“` : ""}</div>
+                    <div style="display:flex;align-items:center;gap:6px">
+                      ${refCode ? `<span class="badge badge-gray">${esc(refCode)}</span>` : ""}
+                      <strong>${esc(g?.title || "Schiri-Spiel")}</strong>
+                    </div>
+                    <div style="color:var(--muted);font-size:0.75rem;margin-top:2px">Weitergabe am ${formatDate(ev.created_at)} ${ev.public_note ? `&bull; „${esc(ev.public_note)}“` : ""}</div>
                   </div>
-                  <strong style="color:var(--danger)">${formatEuro(due)}</strong>
+                  <div style="display:flex;align-items:center;gap:8px">
+                    <strong style="color:var(--danger)">${formatEuro(due)}</strong>
+                    ${
+                      payUrl && myOpenPayments.length > 1
+                        ? `<a href="${payUrl}" target="_blank" rel="noopener" class="btn btn-outline btn-sm" style="font-size:0.75rem;padding:3px 8px;text-decoration:none">🅿️ Zahlen</a>`
+                        : ""
+                    }
+                  </div>
                 </div>
               `;
             })
@@ -1000,8 +1019,8 @@ function renderTasksTab() {
             ${
               ts.paypal
                 ? `
-                  <a href="${buildPayPalUrl(ts.paypal, totalMyOpenCents)}" target="_blank" rel="noopener" class="btn btn-primary btn-sm" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;background:#0070ba;border-color:#0070ba">
-                    <span>🅿️</span> Direkt per PayPal zahlen (${formatEuro(totalMyOpenCents)})
+                  <a href="${buildPayPalUrl(ts.paypal, totalMyOpenCents, myOpenRefCodes.join(", "))}" target="_blank" rel="noopener" class="btn btn-primary btn-sm" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;background:#0070ba;border-color:#0070ba">
+                    <span>🅿️</span> ${myOpenPayments.length > 1 ? `Gesamt per PayPal zahlen (${formatEuro(totalMyOpenCents)})` : `Direkt per PayPal zahlen (${formatEuro(totalMyOpenCents)})`}
                   </a>
                 `
                 : ""
@@ -1341,6 +1360,7 @@ function renderTreasuryTab() {
           : `<table class="responsive-table">
               <thead>
                 <tr>
+                  <th>ID</th>
                   <th>Spieler</th>
                   <th>Datum</th>
                   <th>Betrag</th>
@@ -1352,10 +1372,17 @@ function renderTreasuryTab() {
               <tbody>
                 ${paymentEvents
                   .map((ev) => {
+                    const g = state.data?.games?.find((game) => game.id === ev.game_id);
+                    const ch = g?.chains?.find((c) => c.id === ev.chain_id);
+                    const refCode = ch?.ref_code || (ch?.slot_number ? `Slot ${ch.slot_number}` : `SR-${ev.chain_id}`);
                     const due = ev.fee_total_cents - ev.waived_amount_cents;
                     return `
                       <tr>
-                        <td class="cell-main" data-label="Spieler"><strong>${esc(fullName(ev.fromUser))}</strong></td>
+                        <td data-label="ID"><span class="badge badge-gray">${esc(refCode)}</span></td>
+                        <td class="cell-main" data-label="Spieler">
+                          <strong>${esc(fullName(ev.fromUser))}</strong>
+                          ${g ? `<div class="player-meta">${esc(g.title)}</div>` : ""}
+                        </td>
                         <td data-label="Datum">${formatDate(ev.created_at)}</td>
                         <td data-label="Betrag"><strong>${formatEuro(due)}</strong> ${ev.waived_amount_cents > 0 ? `<div style="font-size:0.75rem;color:var(--muted)">(Erlass: ${formatEuro(ev.waived_amount_cents)})</div>` : ""}</td>
                         <td data-label="Status">${chainPaymentBadge(ev) || esc(ev.payment_status)}</td>
@@ -3815,6 +3842,7 @@ window.exportTreasuryCsv = () => {
     (e) => e.fee_total_cents > 0 || e.hardship_status !== "NONE"
   );
   const headers = [
+    "ID",
     "Datum",
     "Spiel",
     "Spieler",
@@ -3828,8 +3856,11 @@ window.exportTreasuryCsv = () => {
   ];
   const rows = paymentEvents.map((ev) => {
     const g = gameMap.get(ev.game_id);
+    const ch = g?.chains?.find((c) => c.id === ev.chain_id);
+    const refCode = ch?.ref_code || (ch?.slot_number ? `Slot ${ch.slot_number}` : `SR-${ev.chain_id}`);
     const due = ev.fee_total_cents - ev.waived_amount_cents;
     return [
+      refCode,
       formatDate(ev.created_at),
       g ? g.title : ev.game_id,
       fullName(ev.fromUser),
@@ -4434,16 +4465,18 @@ window.openPaymentReminderModal = (eventId) => {
   if (!targetUser) return;
 
   const g = state.data?.games?.find((game) => game.id === ev.game_id);
+  const ch = g?.chains?.find((c) => c.id === ev.chain_id);
+  const refCode = ch?.ref_code || (ch?.slot_number ? `Slot ${ch.slot_number}` : `SR-${ev.chain_id}`);
   const gameTitle = g ? g.title : "Schiedsrichter-Ansetzung";
   const due = ev.fee_total_cents - ev.waived_amount_cents;
 
   const ts = state.data?.treasurySettings || {};
   const ibanStr = ts.iban ? `\n🏦 IBAN: ${ts.iban}\n👤 Empfänger: ${ts.recipient || "RHTC 2. Herren Kasse"}` : "";
-  const paypalUrl = buildPayPalUrl(ts.paypal, due);
+  const paypalUrl = buildPayPalUrl(ts.paypal, due, `${refCode} ${gameTitle}`);
   const paypalStr = paypalUrl ? `\n💳 PayPal: ${paypalUrl}` : "";
-  const refText = g ? `Weitergabe ${g.title}` : `Weitergabegebühr`;
+  const refText = `${refCode} – Weitergabe ${gameTitle}`;
 
-  const msg = `Moin ${targetUser.first_name},\n\nkurze Erinnerung von der Mannschaftskasse: Für deine Weitergabe beim Spiel „${gameTitle}“ steht noch die Gebühr von ${formatEuro(due)} offen.\n\nBitte überweise den Betrag zeitnah:${ibanStr}${paypalStr}\nVerwendungszweck: ${refText} (${targetUser.last_name})\n\nVielen Dank!`;
+  const msg = `Moin ${targetUser.first_name},\n\nkurze Erinnerung von der Mannschaftskasse: Für deine Weitergabe beim Spiel „${gameTitle}“ (${refCode}) steht noch die Gebühr von ${formatEuro(due)} offen.\n\nBitte überweise den Betrag zeitnah:${ibanStr}${paypalStr}\nVerwendungszweck: ${refText} (${targetUser.last_name})\n\nVielen Dank!`;
 
   openReminderModal({
     title: "💬 Zahlungserinnerung senden",
@@ -4467,12 +4500,19 @@ window.openPlayerFeeReminderModal = (playerId) => {
     0
   );
 
+  const openRefCodes = openEvents.map((ev) => {
+    const g = state.data?.games?.find((game) => game.id === ev.game_id);
+    const ch = g?.chains?.find((c) => c.id === ev.chain_id);
+    return ch?.ref_code || (ch?.slot_number ? `Slot ${ch.slot_number}` : "");
+  }).filter(Boolean);
+  const refCodeStr = openRefCodes.length > 0 ? ` (${openRefCodes.join(", ")})` : "";
+
   const ts = state.data?.treasurySettings || {};
   const ibanStr = ts.iban ? `\n🏦 IBAN: ${ts.iban}\n👤 Empfänger: ${ts.recipient || "RHTC 2. Herren Kasse"}` : "";
-  const paypalUrl = buildPayPalUrl(ts.paypal, totalOpenFeeCents);
+  const paypalUrl = buildPayPalUrl(ts.paypal, totalOpenFeeCents, openRefCodes.join(", "));
   const paypalStr = paypalUrl ? `\n💳 PayPal: ${paypalUrl}` : "";
 
-  const msg = `Moin ${p.first_name},\n\nkurze Erinnerung von der Mannschaftskasse: Du hast aktuell ${openEvents.length} offene Weitergabe-Gebühr(en) in Höhe von insgesamt ${formatEuro(totalOpenFeeCents)}.\n\nBitte begleiche den Betrag zeitnah:${ibanStr}${paypalStr}\nVerwendungszweck: Weitergabe-Gebühren ${p.last_name}\n\nVielen Dank!`;
+  const msg = `Moin ${p.first_name},\n\nkurze Erinnerung von der Mannschaftskasse: Du hast aktuell ${openEvents.length} offene Weitergabe-Gebühr(en) in Höhe von insgesamt ${formatEuro(totalOpenFeeCents)}.${refCodeStr ? `\nBetroffene Slots: ${openRefCodes.join(", ")}` : ""}\n\nBitte begleiche den Betrag zeitnah:${ibanStr}${paypalStr}\nVerwendungszweck: Weitergabe-Gebühren ${openRefCodes.join(" ")} (${p.last_name})\n\nVielen Dank!`;
 
   openReminderModal({
     title: "💬 Gesamte Zahlungserinnerung senden",
