@@ -482,6 +482,7 @@ function renderGamesTab() {
                   <div class="menu-section-header">SPIEL</div>
                   <button class="menu-item" onclick="downloadGameIcs(${game.chains[0]?.id || 0})">📅 In Kalender eintragen (.ics)</button>
                   <button class="menu-item" onclick="copyGameWhatsAppInfo(${game.id})">💬 Spiel-Info für WhatsApp kopieren</button>
+                  <button class="menu-item" onclick="openUrgentBroadcastModal(${game.id})" style="color:var(--danger);font-weight:600">🚨 Dringenden Übernahme-Aufruf teilen</button>
                   ${
                     isWart
                       ? `
@@ -581,6 +582,16 @@ function renderGamesTab() {
                     : ""
                 }
                 <button class="menu-item" onclick="downloadGameIcs(${ch.id})">In Kalender eintragen</button>
+                ${
+                  assignee
+                    ? `<button class="menu-item" onclick="openGameReminderModal(${game.id}, ${ch.id})">💬 Schiri-Erinnerung senden</button>`
+                    : ""
+                }
+                ${
+                  assignee && isUnconfirmed
+                    ? `<button class="menu-item" onclick="openConfirmationReminderModal(${game.id}, ${ch.id})" style="color:var(--warn)">⏰ Rückbestätigung anfordern</button>`
+                    : ""
+                }
 
                 <div class="menu-section-header">NACH DEM SPIEL</div>
                 ${
@@ -1085,7 +1096,10 @@ function renderTreasuryTab() {
   let html = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
       <h2 style="margin:0;font-size:1.1rem">Mannschaftskasse, Auszahlungen &amp; Härtefälle (§ 4, § 5, § 8)</h2>
-      <button class="btn btn-outline btn-sm" onclick="exportTreasuryCsv()">Kassen-Export (CSV)</button>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        ${isKassenwart ? `<button class="btn btn-primary btn-sm" onclick="openTreasurySettingsModal()">⚙️ Bankverbindung / IBAN</button>` : ""}
+        <button class="btn btn-outline btn-sm" onclick="exportTreasuryCsv()">Kassen-Export (CSV)</button>
+      </div>
     </div>
     <div class="grid-4">
       <div class="stat-card">
@@ -1174,9 +1188,16 @@ function renderTreasuryTab() {
                         ${
                           isKassenwart
                             ? `<td data-label="Sammel-Aktion">
-                                <button class="btn btn-primary btn-sm" onclick="openSettlePlayerModal(${b.player.id})" title="Abrechnung & Verrechnung für ${esc(fullName(b.player))} öffnen">
-                                  Abrechnen / Verrechnen
-                                </button>
+                                <div class="btn-row" style="margin:0;gap:4px">
+                                  <button class="btn btn-primary btn-sm" onclick="openSettlePlayerModal(${b.player.id})" title="Abrechnung & Verrechnung für ${esc(fullName(b.player))} öffnen">
+                                    Abrechnen / Verrechnen
+                                  </button>
+                                  ${
+                                    b.openFeeCents > 0
+                                      ? `<button class="btn btn-outline btn-sm" onclick="openPlayerFeeReminderModal(${b.player.id})" title="Zahlungserinnerung für alle offenen Gebühren senden">💬 Mahnung</button>`
+                                      : ""
+                                  }
+                                </div>
                               </td>`
                             : ""
                         }
@@ -1223,9 +1244,10 @@ function renderTreasuryTab() {
                         ${
                           isKassenwart
                             ? `<td data-label="Aktion">
-                                <div class="btn-row" style="margin:0">
-                                  ${ev.payment_status === "OPEN" ? `<button class="btn btn-success btn-sm" onclick="markPaid(${ev.id})">Als bezahlt verbuchen</button>` : ""}
-                                  ${ev.hardship_status === "PENDING" ? `<button class="btn btn-warn btn-sm" onclick="openHardshipById(${ev.id})">Härtefall prüfen</button>` : ""}
+                                <div class="btn-row" style="margin:0;gap:4px">
+                                  ${ev.payment_status === "OPEN" ? `<button class="btn btn-success btn-sm" onclick="markPaid(${ev.id})">Als bezahlt</button>` : ""}
+                                  ${ev.payment_status === "OPEN" ? `<button class="btn btn-outline btn-sm" onclick="openPaymentReminderModal(${ev.id})" title="Zahlungserinnerung senden">💬 Mahnung</button>` : ""}
+                                  ${ev.hardship_status === "PENDING" ? `<button class="btn btn-warn btn-sm" onclick="openHardshipById(${ev.id})">Härtefall</button>` : ""}
                                 </div>
                               </td>`
                             : ""
@@ -2885,6 +2907,81 @@ function renderModal() {
     `;
   }
 
+  if (state.modal.type === "treasurySettings") {
+    const ts = state.data?.treasurySettings || {};
+    return `
+      <div class="modal-backdrop" onclick="if(event.target===this) closeModal()">
+        <div class="modal" style="max-width:500px">
+          <h3 style="margin-top:0">⚙️ Bankverbindung der Mannschaftskasse</h3>
+          <p style="font-size:0.85rem;color:var(--muted)">
+            Diese Daten werden automatisch in die WhatsApp- und Text-Zahlungserinnerungen für säumige Spieler eingesetzt.
+          </p>
+          <form id="treasury-settings-form">
+            <div class="form-group">
+              <label>Kontoinhaber / Empfänger</label>
+              <input type="text" id="ts-recipient" value="${esc(ts.recipient || "RHTC 2. Herren Kasse")}" required />
+            </div>
+            <div class="form-group">
+              <label>IBAN</label>
+              <input type="text" id="ts-iban" value="${esc(ts.iban || "")}" placeholder="z. B. DE12 3456 7890 1234 5678 90" />
+            </div>
+            <div class="form-group">
+              <label>PayPal.me-Link (optional)</label>
+              <input type="text" id="ts-paypal" value="${esc(ts.paypal || "")}" placeholder="z. B. paypal.me/rhtc2herren" />
+            </div>
+            <div class="btn-row">
+              <button type="submit" class="btn btn-primary">Einstellungen speichern</button>
+              <button type="button" class="btn btn-outline" onclick="closeModal()">Abbrechen</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    `;
+  }
+
+  if (state.modal.type === "reminder") {
+    const { title, subtitle, message, recipientUser, isGroupShare } = state.modal;
+
+    // Telefonnummer säubern für wa.me
+    let phoneClean = (recipientUser?.mobile_number || "").replace(/[^0-9]/g, "");
+    if (phoneClean.startsWith("0")) {
+      phoneClean = "49" + phoneClean.slice(1);
+    }
+    const canDirectWhatsApp = !isGroupShare && phoneClean.length >= 8;
+    const waUrl = canDirectWhatsApp
+      ? `https://wa.me/${phoneClean}?text=${encodeURIComponent(message)}`
+      : `https://wa.me/?text=${encodeURIComponent(message)}`;
+
+    return `
+      <div class="modal-backdrop" onclick="if(event.target===this) closeModal()">
+        <div class="modal" style="max-width:580px">
+          <h3 style="margin-top:0">${esc(title)}</h3>
+          ${subtitle ? `<p style="font-size:0.85rem;color:var(--muted);margin:-4px 0 12px 0">${esc(subtitle)}</p>` : ""}
+          
+          <div class="form-group">
+            <label style="font-weight:600;display:flex;justify-content:space-between;align-items:center">
+              <span>Nachrichtenvorlage (anpassbar):</span>
+              ${
+                recipientUser
+                  ? `<span style="font-size:0.75rem;color:var(--muted)">Empfänger: <strong>${esc(fullName(recipientUser))}</strong>${recipientUser.mobile_number ? ` (📞 ${esc(recipientUser.mobile_number)})` : " (keine Handynr.)"}</span>`
+                  : `<span style="font-size:0.75rem;color:var(--muted)">Für: <strong>Mannschafts-Chat</strong></span>`
+              }
+            </label>
+            <textarea id="reminder-msg-box" rows="6" style="width:100%;box-sizing:border-box;font-family:inherit;font-size:0.88rem;padding:10px;border-radius:6px;border:1px solid var(--border);line-height:1.4">${esc(message)}</textarea>
+          </div>
+
+          <div class="btn-row" style="margin-top:16px">
+            <button type="button" class="btn btn-primary" onclick="copyReminderText()">📋 Text kopieren</button>
+            <button type="button" class="btn btn-success" onclick="openWhatsAppWithReminder('${canDirectWhatsApp ? phoneClean : ""}')">
+              ${canDirectWhatsApp ? `💬 WhatsApp an ${esc(recipientUser.first_name)}` : `💬 In WhatsApp teilen`}
+            </button>
+            <button type="button" class="btn btn-outline" onclick="closeModal()">Schließen</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   if (state.modal.type === "hardship") {
     const ev = state.modal.ev;
     return `
@@ -3393,6 +3490,27 @@ function attachModalHandlers() {
         });
         state.modal = null;
         await loadDashboard();
+      } catch (err) {
+        alert(err.message);
+      }
+    };
+  }
+
+  const tsForm = document.getElementById("treasury-settings-form");
+  if (tsForm) {
+    tsForm.onsubmit = async (e) => {
+      e.preventDefault();
+      const recipient = (document.getElementById("ts-recipient")?.value || "").trim();
+      const iban = (document.getElementById("ts-iban")?.value || "").trim();
+      const paypal = (document.getElementById("ts-paypal")?.value || "").trim();
+      try {
+        await api("/api/treasury/settings", {
+          method: "POST",
+          body: JSON.stringify({ recipient, iban, paypal }),
+        });
+        state.modal = null;
+        await loadDashboard();
+        alert("Bankverbindung erfolgreich gespeichert!");
       } catch (err) {
         alert(err.message);
       }
@@ -4013,6 +4131,177 @@ window.setStatsSearch = (val, cursorPos) => {
 
 window.setStatsSort = (sort) => {
   state.statsSort = sort;
+  render();
+};
+
+// --- Erinnerungs- & Vorlagen-Funktionen ---
+function openReminderModal({ title, subtitle, message, recipientUser, isGroupShare }) {
+  state.modal = {
+    type: "reminder",
+    title,
+    subtitle,
+    message,
+    recipientUser: recipientUser || null,
+    isGroupShare: Boolean(isGroupShare),
+  };
+  render();
+}
+
+window.copyReminderText = () => {
+  const box = document.getElementById("reminder-msg-box");
+  const text = box ? box.value : "";
+  if (!text) return;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => {
+      alert("Text in die Zwischenablage kopiert!");
+    });
+  } else {
+    box.select();
+    document.execCommand("copy");
+    alert("Text kopiert!");
+  }
+};
+
+window.openWhatsAppWithReminder = (phoneClean) => {
+  const box = document.getElementById("reminder-msg-box");
+  const text = box ? box.value : "";
+  let url = `https://wa.me/?text=${encodeURIComponent(text)}`;
+  if (phoneClean && phoneClean.length >= 8) {
+    url = `https://wa.me/${phoneClean}?text=${encodeURIComponent(text)}`;
+  }
+  window.open(url, "_blank", "noopener,noreferrer");
+};
+
+// 1. Spieltags-Erinnerung für Schiri
+window.openGameReminderModal = (gameId, chainId) => {
+  const g = state.data?.games?.find((game) => game.id === Number(gameId));
+  if (!g) return;
+  const ch = g.chains.find((c) => c.id === Number(chainId));
+  if (!ch) return;
+  const targetUser = ch.pendingAssignee || ch.currentAssignee;
+  if (!targetUser) return;
+
+  const otherChain = g.chains.find((c) => c.id !== ch.id);
+  const otherUser = otherChain ? otherChain.pendingAssignee || otherChain.currentAssignee : null;
+  const partnerName = otherUser ? fullName(otherUser) : "noch offen";
+
+  const d = new Date(g.kickoff_at);
+  const weekday = d.toLocaleDateString("de-DE", { weekday: "long" });
+  const time = d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+  const dateStr = d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
+
+  const msg = `Moin ${targetUser.first_name},\n\nkurze Erinnerung an deinen Schiedsrichter-Einsatz am ${weekday}, ${dateStr} um ${time} Uhr:\n🏑 Spiel: ${g.title}\n📍 Halle: ${g.location || "RHTC Halle"}\n👥 Schiri-Partner: ${partnerName}\n\nBitte sei ca. 20 Minuten vor Anpfiff in der Halle. Gut Pfiff!\n\n(Details in der Schiri-App)`;
+
+  openReminderModal({
+    title: "💬 Spieltags-Erinnerung",
+    subtitle: `Erinnerung für ${fullName(targetUser)} vor dem Spiel`,
+    message: msg,
+    recipientUser: targetUser,
+    isGroupShare: false,
+  });
+};
+
+// 2. Rückbestätigungs-Erinnerung (falls noch unbestätigt)
+window.openConfirmationReminderModal = (gameId, chainId) => {
+  const g = state.data?.games?.find((game) => game.id === Number(gameId));
+  if (!g) return;
+  const ch = g.chains.find((c) => c.id === Number(chainId));
+  if (!ch) return;
+  const targetUser = ch.pendingAssignee || ch.currentAssignee;
+  if (!targetUser) return;
+
+  const dateStr = formatDate(g.kickoff_at);
+  const msg = `Moin ${targetUser.first_name},\n\ndu bist für das folgende Spiel als Schiedsrichter angesetzt:\n🏑 ${g.title}\n📅 ${dateStr} (Slot ${ch.slot_number})\n\nBitte bestätige deine Ansetzung kurz in der Schiri-App oder leite den Slot rechtzeitig weiter, falls du verhindert bist.\n\nDanke dir!`;
+
+  openReminderModal({
+    title: "⏰ Rückbestätigung anfordern",
+    subtitle: `Freundliche Erinnerung zur Bestätigung an ${fullName(targetUser)}`,
+    message: msg,
+    recipientUser: targetUser,
+    isGroupShare: false,
+  });
+};
+
+// 3. Dringender Übernahme-Aufruf an Gruppenchat
+window.openUrgentBroadcastModal = (gameId) => {
+  const g = state.data?.games?.find((game) => game.id === Number(gameId));
+  if (!g) return;
+
+  const totalPot = (g.chains || []).reduce((acc, c) => acc + (c.payout_pool_cents || 0), 0);
+  const dateStr = formatDate(g.kickoff_at);
+
+  let msg = `🚨 Dringend Schiedsrichter gesucht!\n\nFür unser Hallenspiel:\n🏑 ${g.title}\n📅 ${dateStr}\n📍 ${g.location || "RHTC Halle"}\n\nist noch mindestens ein Schiedsrichter-Slot unbesetzt!`;
+  if (totalPot > 0) {
+    msg += `\n💰 Dem Übernehmer winkt ein Prämientopf von aktuell ${formatEuro(totalPot)}!`;
+  }
+  msg += `\n\nWer kann einspringen? Bitte direkt in der App auf „Freiwillig übernehmen“ tippen!\nDanke für euren Einsatz! 🏑`;
+
+  openReminderModal({
+    title: "🚨 Dringender Übernahme-Aufruf",
+    subtitle: `Aufruf für den WhatsApp-Gruppenchat der 2. Herren`,
+    message: msg,
+    recipientUser: null,
+    isGroupShare: true,
+  });
+};
+
+// 4. Zahlungserinnerung für Einzel-Event
+window.openPaymentReminderModal = (eventId) => {
+  const ev = (state.data?.events || []).find((e) => e.id === Number(eventId));
+  if (!ev) return;
+  const targetUser = ev.fromUser;
+  if (!targetUser) return;
+
+  const g = state.data?.games?.find((game) => game.id === ev.game_id);
+  const gameTitle = g ? g.title : "Schiedsrichter-Ansetzung";
+  const due = ev.fee_total_cents - ev.waived_amount_cents;
+
+  const ts = state.data?.treasurySettings || {};
+  const ibanStr = ts.iban ? `\n🏦 IBAN: ${ts.iban}\n👤 Empfänger: ${ts.recipient || "RHTC 2. Herren Kasse"}` : "";
+  const paypalStr = ts.paypal ? `\n💳 PayPal: https://${ts.paypal.replace(/^https?:\/\//, "")}` : "";
+  const refText = g ? `Weitergabe ${g.title}` : `Weitergabegebühr`;
+
+  const msg = `Moin ${targetUser.first_name},\n\nkurze Erinnerung von der Mannschaftskasse: Für deine Weitergabe beim Spiel „${gameTitle}“ steht noch die Gebühr von ${formatEuro(due)} offen.\n\nBitte überweise den Betrag zeitnah:${ibanStr}${paypalStr}\nVerwendungszweck: ${refText} (${targetUser.last_name})\n\nVielen Dank!`;
+
+  openReminderModal({
+    title: "💬 Zahlungserinnerung senden",
+    subtitle: `Mahnung / Zahlungserinnerung an ${fullName(targetUser)} (${formatEuro(due)})`,
+    message: msg,
+    recipientUser: targetUser,
+    isGroupShare: false,
+  });
+};
+
+// 5. Sammel-Zahlungserinnerung für alle offenen Gebühren eines Spielers
+window.openPlayerFeeReminderModal = (playerId) => {
+  const p = (state.data?.players || []).find((u) => u.id === Number(playerId));
+  if (!p) return;
+
+  const openEvents = (state.data?.events || []).filter(
+    (e) => e.from_user_id === p.id && e.payment_status === "OPEN"
+  );
+  const totalOpenFeeCents = openEvents.reduce(
+    (acc, e) => acc + Math.max(0, (e.fee_total_cents || 0) - (e.waived_amount_cents || 0)),
+    0
+  );
+
+  const ts = state.data?.treasurySettings || {};
+  const ibanStr = ts.iban ? `\n🏦 IBAN: ${ts.iban}\n👤 Empfänger: ${ts.recipient || "RHTC 2. Herren Kasse"}` : "";
+  const paypalStr = ts.paypal ? `\n💳 PayPal: https://${ts.paypal.replace(/^https?:\/\//, "")}` : "";
+
+  const msg = `Moin ${p.first_name},\n\nkurze Erinnerung von der Mannschaftskasse: Du hast aktuell ${openEvents.length} offene Weitergabe-Gebühr(en) in Höhe von insgesamt ${formatEuro(totalOpenFeeCents)}.\n\nBitte begleiche den Betrag zeitnah:${ibanStr}${paypalStr}\nVerwendungszweck: Weitergabe-Gebühren ${p.last_name}\n\nVielen Dank!`;
+
+  openReminderModal({
+    title: "💬 Gesamte Zahlungserinnerung senden",
+    subtitle: `Erinnerung über ${formatEuro(totalOpenFeeCents)} an ${fullName(p)}`,
+    message: msg,
+    recipientUser: p,
+    isGroupShare: false,
+  });
+};
+
+window.openTreasurySettingsModal = () => {
+  state.modal = { type: "treasurySettings" };
   render();
 };
 

@@ -157,9 +157,12 @@ export async function GET(
       allUsersRaw.filter((u) => !u.is_active_in_list)
     );
 
-    const [seasonGames, rawOverrides] = await Promise.all([
+    const [seasonGames, rawOverrides, treasuryIban, treasuryRecipient, treasuryPaypal] = await Promise.all([
       isAllTime ? repo.games.listAll() : repo.games.listBySeason(Number(season.id)),
       repo.settings.get("deployed_count_overrides"),
+      repo.settings.get("treasury_iban"),
+      repo.settings.get("treasury_recipient"),
+      repo.settings.get("treasury_paypal"),
     ]);
     let deployedOverrides: Record<string, number> = {};
     if (rawOverrides) {
@@ -285,6 +288,11 @@ export async function GET(
         totalOpenPaymentsCents,
         totalPaidCents,
         totalPayoutPoolOpenCents,
+      },
+      treasurySettings: {
+        iban: treasuryIban || "",
+        recipient: treasuryRecipient || "RHTC 2. Herren Kasse",
+        paypal: treasuryPaypal || "",
       },
     });
   }
@@ -1392,6 +1400,24 @@ export async function POST(
       totalOffsetAmountCents,
       netPayoutCents,
     });
+  }
+
+  // 20. /api/treasury/settings (Hinterlegen von IBAN, Empfänger & PayPal)
+  if (path === "/treasury/settings") {
+    if (user.role !== "KASSENWART" && user.role !== "ADMIN") {
+      return NextResponse.json({ error: "Keine Berechtigung." }, { status: 403 });
+    }
+    const iban = String(body.iban || "").trim();
+    const recipient = String(body.recipient || "").trim();
+    const paypal = String(body.paypal || "").trim();
+
+    await Promise.all([
+      repo.settings.set("treasury_iban", iban),
+      repo.settings.set("treasury_recipient", recipient),
+      repo.settings.set("treasury_paypal", paypal),
+    ]);
+
+    return NextResponse.json({ ok: true });
   }
 
   return NextResponse.json({ error: "Route nicht gefunden." }, { status: 404 });

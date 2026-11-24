@@ -129,6 +129,12 @@ Das Navigationsmenü öffnet sich mobil und auf dem PC über den Button **`☰ M
   - Revisionssichere Protokollierung in den System-Events (§ 6).
 - **Tabelle Weitergabe-Zahlungen:** Status offener 15 € Gebühren und Härtefallprüfung.
 - **Tabelle Auszahlungstöpfe:** Zeigt für jeden Strang den tatsächlichen Schiedsrichter und erlaubt die Einzelauszahlung der Prämie nach bestätigtem Einsatz.
+- **⚙️ Konfiguration Bankverbindung / IBAN:** Kassenwart kann Empfänger, IBAN und PayPal-Link hinterlegen.
+- **💬 1-Klick-WhatsApp- & Text-Erinnerungen:**
+  - *Spieltags-Erinnerung:* Für eingeteilte Schiedsrichter vor dem Spiel mit allen Infos (Zeit, Halle, Partner).
+  - *Zahlungserinnerung / Mahnung:* Für säumige Weitergabe-Gebühren direkt mit IBAN/PayPal an den Spieler.
+  - *Dringender Übernahme-Aufruf:* Bei unbesetzten Slots oder Jackpots direkt an den Gruppenchat.
+  - *Rückbestätigungs-Erinnerung:* An unbestätigte Schiris zur schnellen Zusage oder Weitergabe.
 - CSV-Export für die Mannschaftskasse.
 
 ### 7. 📄 Dokumentation (§ 6) *(Schiriwart & Admin)*
