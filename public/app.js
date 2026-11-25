@@ -585,6 +585,53 @@ function renderGamesTab() {
           primaryText = "Aktionen";
         }
 
+        // Aktionen für Dropdown-Menü vorbereiten
+        const ansetzungItems = [];
+        if ((isResponsible || isWart) && isUnconfirmed) {
+          ansetzungItems.push(`<button class="menu-item" onclick="respondHandoff(${ch.id}, 'ACCEPT')">Annehmen (bestätigen)</button>`);
+        }
+        if (isResponsible || isWart) {
+          ansetzungItems.push(`<button class="menu-item" onclick="handoffById(${ch.id})">Weiterleiten ...</button>`);
+        }
+        ansetzungItems.push(`<button class="menu-item" onclick="downloadGameIcs(${ch.id})">In Kalender eintragen</button>`);
+        if (assignee) {
+          ansetzungItems.push(`<button class="menu-item" onclick="openGameReminderModal(${game.id}, ${ch.id})">💬 Schiri-Erinnerung senden</button>`);
+        }
+        if (assignee && isUnconfirmed) {
+          ansetzungItems.push(`<button class="menu-item" onclick="openConfirmationReminderModal(${game.id}, ${ch.id})" style="color:var(--warn)">⏰ Rückbestätigung anfordern</button>`);
+        }
+        if (canVolunteerForChain(ch)) {
+          ansetzungItems.push(`<button class="menu-item" onclick="requestVolunteer(${ch.id})">${ch.payout_pool_cents > 0 ? `Unbestätigtes Spiel übernehmen (+${formatEuro(ch.payout_pool_cents)})` : "Unbestätigtes Spiel übernehmen"}</button>`);
+        }
+        if ((isResponsible || isWart) && ch.status === "VOLUNTARY_REQUESTED") {
+          ansetzungItems.push(`<button class="menu-item" onclick="decideVolunteer(${ch.id}, 'APPROVE')">Übernahme bestätigen</button>`);
+          ansetzungItems.push(`<button class="menu-item text-danger" onclick="decideVolunteer(${ch.id}, 'REJECT')">Übernahme ablehnen (selbst pfeifen)</button>`);
+        }
+
+        const nachDemSpielItems = [];
+        if (isWart && (ch.status === "REPORTED_DEPLOYED" || ch.status === "CONFIRMED" || ch.status === "ASSIGNED")) {
+          nachDemSpielItems.push(`<button class="menu-item" onclick="confirmDeployed(${ch.id})">Einsatz bestätigen (§ 6.1)</button>`);
+        }
+        if ((isResponsible || isWart) && (new Date(game.kickoff_at).getTime() <= Date.now() || isWart)) {
+          nachDemSpielItems.push(`<button class="menu-item" onclick="reportDeployed(${ch.id})">Als gepfiffen melden (§ 6.2)</button>`);
+        }
+
+        const adminItems = [];
+        if (isWart && ch.status !== "CONFIRMED_DEPLOYED") {
+          adminItems.push(`<button class="menu-item" onclick="openManualAssignModal(${ch.id})">Manuell zuweisen ...</button>`);
+        }
+
+        let dropdownContent = "";
+        if (ansetzungItems.length > 0) {
+          dropdownContent += `<div class="menu-section-header">ANSETZUNG</div>${ansetzungItems.join("")}`;
+        }
+        if (nachDemSpielItems.length > 0) {
+          dropdownContent += `<div class="menu-section-header">NACH DEM SPIEL</div>${nachDemSpielItems.join("")}`;
+        }
+        if (adminItems.length > 0) {
+          dropdownContent += `<div class="menu-section-header">ADMIN</div>${adminItems.join("")}`;
+        }
+
         html += `
           <div class="ref-slot-card">
             <div class="ref-slot-info">
@@ -598,60 +645,7 @@ function renderGamesTab() {
               <button class="slot-primary-btn" onclick="${primaryClick}">${primaryText}</button>
               <button class="slot-dropdown-toggle" onclick="toggleSlotDropdown(event, ${ch.id})" title="Weitere Aktionen">▾</button>
               <div class="slot-dropdown-menu" id="slot-menu-${ch.id}">
-                <div class="menu-section-header">ANSETZUNG</div>
-                ${
-                  (isResponsible || isWart) && isUnconfirmed
-                    ? `<button class="menu-item" onclick="respondHandoff(${ch.id}, 'ACCEPT')">Annehmen (bestätigen)</button>`
-                    : ""
-                }
-                ${
-                  isResponsible || isWart
-                    ? `<button class="menu-item" onclick="handoffById(${ch.id})">Weiterleiten ...</button>`
-                    : ""
-                }
-                <button class="menu-item" onclick="downloadGameIcs(${ch.id})">In Kalender eintragen</button>
-                ${
-                  assignee
-                    ? `<button class="menu-item" onclick="openGameReminderModal(${game.id}, ${ch.id})">💬 Schiri-Erinnerung senden</button>`
-                    : ""
-                }
-                ${
-                  assignee && isUnconfirmed
-                    ? `<button class="menu-item" onclick="openConfirmationReminderModal(${game.id}, ${ch.id})" style="color:var(--warn)">⏰ Rückbestätigung anfordern</button>`
-                    : ""
-                }
-
-                <div class="menu-section-header">NACH DEM SPIEL</div>
-                ${
-                  isWart && (ch.status === "REPORTED_DEPLOYED" || ch.status === "CONFIRMED" || ch.status === "ASSIGNED")
-                    ? `<button class="menu-item" onclick="confirmDeployed(${ch.id})">Einsatz bestätigen (§ 6.1)</button>`
-                    : ""
-                }
-                ${
-                  (isResponsible || isWart) && (new Date(game.kickoff_at).getTime() <= Date.now() || isWart)
-                    ? `<button class="menu-item" onclick="reportDeployed(${ch.id})">Als gepfiffen melden (§ 6.2)</button>`
-                    : ""
-                }
-
-                <div class="menu-section-header">ADMIN</div>
-                ${
-                  isWart && ch.status !== "CONFIRMED_DEPLOYED"
-                    ? `<button class="menu-item" onclick="openManualAssignModal(${ch.id})">Manuell zuweisen ...</button>`
-                    : ""
-                }
-                ${
-                  canVolunteerForChain(ch)
-                    ? `<button class="menu-item" onclick="requestVolunteer(${ch.id})">${ch.payout_pool_cents > 0 ? `Unbestätigtes Spiel übernehmen (+${formatEuro(ch.payout_pool_cents)})` : "Unbestätigtes Spiel übernehmen"}</button>`
-                    : ""
-                }
-                ${
-                  (isResponsible || isWart) && ch.status === "VOLUNTARY_REQUESTED"
-                    ? `
-                      <button class="menu-item" onclick="decideVolunteer(${ch.id}, 'APPROVE')">Übernahme bestätigen</button>
-                      <button class="menu-item text-danger" onclick="decideVolunteer(${ch.id}, 'REJECT')">Übernahme ablehnen (selbst pfeifen)</button>
-                    `
-                    : ""
-                }
+                ${dropdownContent}
               </div>
             </div>
           </div>
