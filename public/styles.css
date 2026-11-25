@@ -1298,6 +1298,14 @@ th { font-size: 0.76rem; color: var(--muted); text-transform: uppercase; letter-
 
 /* Responsive Styles */
 @media (max-width: 768px) {
+  /* Native App Shell: Fixed Header and Bottom Bar */
+  header.topbar {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    padding: 10px 14px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  }
   .hamburger-label {
     display: none;
   }
@@ -1316,14 +1324,11 @@ th { font-size: 0.76rem; color: var(--muted); text-transform: uppercase; letter-
   .header-user-btn {
     padding: 6px;
   }
-  .header-tasks-alert span:not(.badge) {
-    display: none;
+  .header-tasks-alert {
+    display: none !important;
   }
   .mobile-subbar {
-    display: block;
-  }
-  header.topbar {
-    padding: 10px 14px;
+    display: none !important;
   }
   .topbar .brand h1 {
     font-size: 1rem;
@@ -1333,6 +1338,89 @@ th { font-size: 0.76rem; color: var(--muted); text-transform: uppercase; letter-
   }
   .topbar .brand span {
     display: none;
+  }
+
+  /* Room for bottom navigation bar on mobile */
+  .container {
+    padding-bottom: calc(76px + env(safe-area-inset-bottom, 16px));
+  }
+}
+
+/* ==========================================================================
+   Mobile Bottom Navigation Bar (Native App Style)
+   ========================================================================== */
+.mobile-bottom-nav {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .mobile-bottom-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 120;
+    background: #111111;
+    border-top: 1px solid rgba(212, 160, 23, 0.35);
+    box-shadow: 0 -3px 12px rgba(0, 0, 0, 0.28);
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
+    justify-content: space-around;
+    align-items: center;
+  }
+
+  .bottom-nav-item {
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.65);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 4px 6px;
+    cursor: pointer;
+    text-decoration: none;
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    border-radius: 8px;
+    transition: all 0.15s ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .bottom-nav-item:active {
+    background: rgba(212, 160, 23, 0.15);
+  }
+  .bottom-nav-item.active {
+    color: var(--gold);
+  }
+  .bottom-nav-icon {
+    font-size: 1.25rem;
+    line-height: 1.2;
+    display: block;
+    position: relative;
+  }
+  .bottom-nav-label {
+    font-size: 0.68rem;
+    font-weight: 700;
+    margin-top: 2px;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .bottom-nav-badge {
+    position: absolute;
+    top: -4px;
+    right: -10px;
+    background: var(--danger);
+    color: #ffffff;
+    font-size: 0.65rem;
+    font-weight: 800;
+    padding: 1px 5px;
+    border-radius: 999px;
+    border: 1.5px solid #111111;
+    min-width: 16px;
+    text-align: center;
   }
 }
 

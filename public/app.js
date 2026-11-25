@@ -3467,6 +3467,34 @@ function render() {
       ${state.error ? `<div class="alert alert-danger">${esc(state.error)}</div>` : ""}
       ${tabContent}
     </div>
+
+    <!-- Mobile Bottom Navigation Bar -->
+    <nav class="mobile-bottom-nav">
+      <button class="bottom-nav-item ${state.tab === "games" ? "active" : ""}" onclick="setTab('games')">
+        <span class="bottom-nav-icon">🏑</span>
+        <span class="bottom-nav-label">Spiele</span>
+      </button>
+      <button class="bottom-nav-item ${state.tab === "calendar" ? "active" : ""}" onclick="setTab('calendar')">
+        <span class="bottom-nav-icon">📅</span>
+        <span class="bottom-nav-label">Kalender</span>
+      </button>
+      <button class="bottom-nav-item ${state.tab === "tasks" ? "active" : ""}" onclick="setTab('tasks')">
+        <span class="bottom-nav-icon">
+          📋
+          ${pendingCount > 0 ? `<span class="bottom-nav-badge">${pendingCount}</span>` : ""}
+        </span>
+        <span class="bottom-nav-label">Aufgaben</span>
+      </button>
+      <button class="bottom-nav-item ${state.tab === "stats" ? "active" : ""}" onclick="setTab('stats')">
+        <span class="bottom-nav-icon">🏆</span>
+        <span class="bottom-nav-label">Statistik</span>
+      </button>
+      <button class="bottom-nav-item ${["players", "treasury", "chains", "docs"].includes(state.tab) ? "active" : ""}" onclick="openDrawer()">
+        <span class="bottom-nav-icon">⋯</span>
+        <span class="bottom-nav-label">Mehr</span>
+      </button>
+    </nav>
+
     ${renderModal()}
   `;
 
