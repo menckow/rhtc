@@ -621,15 +621,16 @@ th { font-size: 0.76rem; color: var(--muted); text-transform: uppercase; letter-
   .players-table tr,
   .responsive-table tr {
     border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 10px 12px;
-    margin-bottom: 10px;
-    background: #faf9f5;
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin-bottom: 12px;
+    background: #ffffff;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.04);
   }
   .players-table td,
   .responsive-table td {
     border-bottom: none;
-    padding: 4px 0;
+    padding: 5px 0;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -650,13 +651,79 @@ th { font-size: 0.76rem; color: var(--muted); text-transform: uppercase; letter-
   .responsive-table td.cell-main {
     display: block;
     text-align: left;
-    padding-bottom: 6px;
-    border-bottom: 1px solid var(--border);
-    margin-bottom: 4px;
+    padding-bottom: 8px;
+    border-bottom: 1px dashed var(--border);
+    margin-bottom: 6px;
   }
   .players-table td.cell-main::before,
   .responsive-table td.cell-main::before {
     display: none;
+  }
+
+  /* --- Mobile Accordion System --- */
+  .mobile-accordion-toggle {
+    display: inline-flex !important;
+    align-items: center;
+    gap: 4px;
+    background: #f1f5f9;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 4px 10px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text);
+    cursor: pointer;
+    margin-top: 6px;
+    width: 100%;
+    justify-content: center;
+  }
+  .mobile-accordion-toggle:active {
+    background: #e2e8f0;
+  }
+  .mobile-accordion-content {
+    display: none;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px dashed var(--border);
+    animation: accordionFade 0.2s ease-in-out;
+  }
+  .mobile-accordion-content.is-open {
+    display: block;
+  }
+  @keyframes accordionFade {
+    from { opacity: 0; transform: translateY(-3px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Secondary rows collapse on mobile */
+  tr.has-mobile-accordion td.mobile-secondary {
+    display: none;
+  }
+  tr.has-mobile-accordion.is-open td.mobile-secondary {
+    display: flex;
+  }
+
+  /* Touch-friendly buttons in tables on small screens */
+  .players-table .btn,
+  .responsive-table .btn {
+    width: 100%;
+    justify-content: center;
+    margin-top: 4px;
+  }
+  .players-table .btn-row,
+  .responsive-table .btn-row {
+    width: 100%;
+    flex-direction: column;
+  }
+}
+
+/* Hide accordion toggles on desktop */
+@media (min-width: 761px) {
+  .mobile-accordion-toggle {
+    display: none !important;
+  }
+  .mobile-accordion-content {
+    display: block !important;
   }
 }
 

@@ -1143,8 +1143,9 @@ function renderPlayersTab() {
     if (p.iban) paymentParts.push(`🏦 ${esc(p.iban)}`);
     if (p.paypal) paymentParts.push(`🅿️ ${esc(p.paypal)}`);
     const paymentText = paymentParts.join(" &bull; ");
+    const hasExtraDetails = Boolean(paymentText || isWart || p.mobile_number);
     html += `
-      <tr>
+      <tr class="has-mobile-accordion" id="player-row-${p.id}">
         ${
           isWart
             ? `<td data-label="Auswahl"><input type="checkbox" ${isChecked ? "checked" : ""} ${isSelf ? "disabled title='Eigener Account'" : ""} onchange="toggleSelectPlayer(${p.id}, this.checked)" /></td>`
@@ -1153,8 +1154,7 @@ function renderPlayersTab() {
         <td data-label="#">${idx + 1}${p.list_order_override !== null && p.list_order_override !== undefined ? ` <span class="badge badge-gray" title="Manuelle Position (§ 2 Abs. 4)">#${p.list_order_override}</span>` : ""}</td>
         <td class="cell-main">
           <div><strong>${esc(p.last_name)}, ${esc(p.first_name)}</strong> <span class="badge badge-gray">${roleLabel(p.role)}</span></div>
-          <div class="player-meta">${esc(p.email)}${p.mobile_number ? ` &bull; ${esc(p.mobile_number)}` : ""}</div>
-          ${paymentText ? `<div class="player-meta" style="color:var(--text-muted);font-size:0.75rem">${paymentText}</div>` : ""}
+          <div class="player-meta">${esc(p.email)}</div>
         </td>
         <td data-label="Status">
           <div class="player-badges">
@@ -1166,9 +1166,25 @@ function renderPlayersTab() {
         <td data-label="Offen">${p.openPaymentCents > 0 ? `<strong style="color:var(--danger)">${formatEuro(p.openPaymentCents)}</strong>` : "0,00 €"}</td>
         ${
           isWart
-            ? `<td data-label="Aktion">
+            ? `<td data-label="Aktion" class="mobile-secondary">
                 <button class="btn btn-primary btn-sm" onclick="openEditPlayerModal(${p.id})">Bearbeiten</button>
               </td>`
+            : ""
+        }
+        ${
+          hasExtraDetails
+            ? `
+              <td class="mobile-secondary" data-label="Kontakt &amp; Bank" style="flex-direction:column;align-items:flex-start;text-align:left;background:#f8fafc;border-radius:6px;padding:8px 10px;margin-top:4px">
+                ${p.mobile_number ? `<div style="font-size:0.8rem">📞 ${esc(p.mobile_number)}</div>` : ""}
+                ${paymentText ? `<div style="font-size:0.78rem;color:var(--muted);margin-top:2px">${paymentText}</div>` : ""}
+                ${!isWart ? "" : `<div style="width:100%;margin-top:6px"><button class="btn btn-primary btn-sm" style="width:100%" onclick="openEditPlayerModal(${p.id})">✏️ Spieler bearbeiten</button></div>`}
+              </td>
+              <td style="padding:0;border:none">
+                <button type="button" class="mobile-accordion-toggle" onclick="toggleMobileAccordion('player-row-${p.id}', this)">
+                  <span>Details &amp; Aktionen</span> <span class="acc-arrow">▾</span>
+                </button>
+              </td>
+            `
             : ""
         }
       </tr>
@@ -1304,31 +1320,31 @@ function renderTreasuryTab() {
                       : `0,00 € (Ausgeglichen)`;
 
                     return `
-                      <tr>
+                      <tr class="has-mobile-accordion" id="balance-row-${b.player.id}">
                         <td class="cell-main" data-label="Spieler">
                           <strong>${esc(b.player.last_name)}, ${esc(b.player.first_name)}</strong>
                           <div class="player-meta">${roleLabel(b.player.role)} &bull; ${esc(b.player.email)}</div>
                         </td>
-                        <td data-label="Topf-Guthaben">
+                        <td data-label="Netto-Saldo">
+                          <strong style="${saldoClass};font-size:0.95rem">${saldoText}</strong>
+                        </td>
+                        <td data-label="Topf-Guthaben" class="mobile-secondary">
                           ${
                             b.readyPayoutCents > 0
                               ? `<strong style="color:var(--success)">${formatEuro(b.readyPayoutCents)}</strong> <span style="font-size:0.75rem;color:var(--muted)">(${b.readyChains.length} ${b.readyChains.length === 1 ? "Topf" : "Töpfe"})</span>`
                               : `<span style="color:var(--muted)">0,00 €</span>`
                           }
                         </td>
-                        <td data-label="Offene Gebühren">
+                        <td data-label="Offene Gebühren" class="mobile-secondary">
                           ${
                             b.openFeeCents > 0
                               ? `<strong style="color:var(--danger)">${formatEuro(b.openFeeCents)}</strong> <span style="font-size:0.75rem;color:var(--muted)">(${b.openEvents.length}× offen)</span>`
                               : `<span style="color:var(--muted)">0,00 €</span>`
                           }
                         </td>
-                        <td data-label="Netto-Saldo">
-                          <strong style="${saldoClass};font-size:0.95rem">${saldoText}</strong>
-                        </td>
                         ${
                           isKassenwart
-                            ? `<td data-label="Sammel-Aktion">
+                            ? `<td data-label="Sammel-Aktion" class="mobile-secondary">
                                 <div class="btn-row" style="margin:0;gap:4px">
                                   <button class="btn btn-primary btn-sm" onclick="openSettlePlayerModal(${b.player.id})" title="Abrechnung & Verrechnung für ${esc(fullName(b.player))} öffnen">
                                     Abrechnen / Verrechnen
@@ -1342,6 +1358,11 @@ function renderTreasuryTab() {
                               </td>`
                             : ""
                         }
+                        <td style="padding:0;border:none">
+                          <button type="button" class="mobile-accordion-toggle" onclick="toggleMobileAccordion('balance-row-${b.player.id}', this)">
+                            <span>Aufschlüsselung &amp; Aktionen</span> <span class="acc-arrow">▾</span>
+                          </button>
+                        </td>
                       </tr>
                     `;
                   })
@@ -1377,22 +1398,22 @@ function renderTreasuryTab() {
                     const refCode = ch?.ref_code || (ch?.slot_number ? `Slot ${ch.slot_number}` : `SR-${ev.chain_id}`);
                     const due = ev.fee_total_cents - ev.waived_amount_cents;
                     return `
-                      <tr>
+                      <tr class="has-mobile-accordion" id="pay-ev-row-${ev.id}">
                         <td data-label="ID"><span class="badge badge-gray">${esc(refCode)}</span></td>
                         <td class="cell-main" data-label="Spieler">
                           <strong>${esc(fullName(ev.fromUser))}</strong>
                           ${g ? `<div class="player-meta">${esc(g.title)}</div>` : ""}
                         </td>
-                        <td data-label="Datum">${formatDate(ev.created_at)}</td>
                         <td data-label="Betrag"><strong>${formatEuro(due)}</strong> ${ev.waived_amount_cents > 0 ? `<div style="font-size:0.75rem;color:var(--muted)">(Erlass: ${formatEuro(ev.waived_amount_cents)})</div>` : ""}</td>
                         <td data-label="Status">${chainPaymentBadge(ev) || esc(ev.payment_status)}</td>
-                        <td data-label="Härtefall (§ 8)">
+                        <td data-label="Datum" class="mobile-secondary">${formatDate(ev.created_at)}</td>
+                        <td data-label="Härtefall (§ 8)" class="mobile-secondary">
                           ${ev.hardship_status === "NONE" ? "–" : esc(ev.hardship_status)}
                           ${isKassenwart && ev.hardship_reason_confidential ? `<div style="font-size:0.78rem;color:var(--muted);margin-top:2px">Vertraulich: ${esc(ev.hardship_reason_confidential)}</div>` : ""}
                         </td>
                         ${
                           isKassenwart
-                            ? `<td data-label="Aktion">
+                            ? `<td data-label="Aktion" class="mobile-secondary">
                                 <div class="btn-row" style="margin:0;gap:4px">
                                   ${ev.payment_status === "OPEN" ? `<button class="btn btn-success btn-sm" onclick="markPaid(${ev.id})">Als bezahlt</button>` : ""}
                                   ${ev.payment_status === "OPEN" ? `<button class="btn btn-outline btn-sm" onclick="openPaymentReminderModal(${ev.id})" title="Zahlungserinnerung senden">💬 Mahnung</button>` : ""}
@@ -1401,6 +1422,11 @@ function renderTreasuryTab() {
                               </td>`
                             : ""
                         }
+                        <td style="padding:0;border:none">
+                          <button type="button" class="mobile-accordion-toggle" onclick="toggleMobileAccordion('pay-ev-row-${ev.id}', this)">
+                            <span>Datum &amp; Aktionen</span> <span class="acc-arrow">▾</span>
+                          </button>
+                        </td>
                       </tr>
                     `;
                   })
@@ -1447,13 +1473,13 @@ function renderTreasuryTab() {
                       const canSettle = isKassenwart && ch.status === "CONFIRMED_DEPLOYED" && !ch.payout_settled;
 
                       return `
-                  <tr>
+                  <tr class="has-mobile-accordion" id="payout-row-${ch.id}">
                     <td data-label="ID"><span class="badge badge-gray">${esc(ch.ref_code || `SR-00${ch.slot_number}`)}</span></td>
                     <td class="cell-main" data-label="Spiel"><strong>${esc(g.title)}</strong><div class="player-meta">${formatDate(g.kickoff_at)} &bull; Slot ${ch.slot_number}</div></td>
-                    <td data-label="Schiedsrichter">${actualRefHtml}</td>
-                    <td data-label="Status">${statusBadge(ch.status)}</td>
                     <td data-label="Betrag"><strong>${formatEuro(ch.payout_pool_cents)}</strong></td>
-                    <td data-label="Auszahlung">
+                    <td data-label="Status">${statusBadge(ch.status)}</td>
+                    <td data-label="Schiedsrichter" class="mobile-secondary">${actualRefHtml}</td>
+                    <td data-label="Auszahlung" class="mobile-secondary">
                       ${
                         ch.payout_settled
                           ? `<span class="badge badge-green">Ausgezahlt an ${esc(fullName(ch.currentAssignee))}</span>`
@@ -1463,6 +1489,11 @@ function renderTreasuryTab() {
                           ? `<span class="badge badge-blue">Bereit (${esc(fullName(ch.currentAssignee))})</span>`
                           : `<span class="badge badge-gray" title="Auszahlung erfolgt erst an denjenigen, der das Spiel bestätigt übernommen und auch gepfiffen hat (§ 4 Abs. 3, § 5 Abs. 4)">Offen (nach Einsatz)</span>`
                       }
+                    </td>
+                    <td style="padding:0;border:none">
+                      <button type="button" class="mobile-accordion-toggle" onclick="toggleMobileAccordion('payout-row-${ch.id}', this)">
+                        <span>Schiri &amp; Auszahlung</span> <span class="acc-arrow">▾</span>
+                      </button>
                     </td>
                   </tr>`;
                     }
@@ -2111,7 +2142,7 @@ function renderStatsTab() {
               badgesHtml += `<span class="stats-badge-tag stats-badge-purple" title="Meiste Ansetzungen weitergegeben">🏃 Staffel</span>`;
 
             return `
-              <tr class="stats-row-clickable ${isMe ? "stats-row-current-user" : ""}" onclick="openPlayerDetailModal(${p.id})" title="Details zu ${esc(fullName(p))} anzeigen">
+              <tr class="stats-row-clickable has-mobile-accordion ${isMe ? "stats-row-current-user" : ""}" id="stats-row-${p.id}" onclick="if(!event.target.closest('.mobile-accordion-toggle')) openPlayerDetailModal(${p.id})" title="Details zu ${esc(fullName(p))} anzeigen">
                 <td data-label="#"><strong>${currentTableRank}</strong></td>
                 <td data-label="Spieler" class="cell-main">
                   <div>
@@ -2128,14 +2159,19 @@ function renderStatsTab() {
                 <td data-label="Topf-Verdienst" style="color:var(--success);font-weight:700">
                   ${p.earnedPayoutCents > 0 ? formatEuro(p.earnedPayoutCents) : "0,00 €"}
                 </td>
-                <td data-label="Übernahmen">
+                <td data-label="Übernahmen" class="mobile-secondary">
                   ${p.takeoverCount > 0 ? `<strong style="color:var(--info)">${p.takeoverCount}×</strong> gerettet` : `<span style="color:var(--muted)">0</span>`}
                 </td>
-                <td data-label="Weitergaben">
+                <td data-label="Weitergaben" class="mobile-secondary">
                   ${p.handoffCount > 0 ? `<span style="color:var(--warn);font-weight:600">${p.handoffCount}×</span> weitergegeben` : `<span style="color:var(--muted)">0</span>`}
                 </td>
-                <td data-label="Offen">
+                <td data-label="Offen" class="mobile-secondary">
                   ${p.openPaymentCents > 0 ? `<strong style="color:var(--danger)">${formatEuro(p.openPaymentCents)}</strong>` : "0,00 €"}
+                </td>
+                <td style="padding:0;border:none">
+                  <button type="button" class="mobile-accordion-toggle" onclick="event.stopPropagation(); toggleMobileAccordion('stats-row-${p.id}', this)">
+                    <span>Übernahmen &amp; Saldo</span> <span class="acc-arrow">▾</span>
+                  </button>
                 </td>
               </tr>
             `;
@@ -4540,6 +4576,16 @@ function openPlayerDetailModal(playerId) {
   state.modal = { type: "playerDetail", player: p };
   render();
 }
+
+window.toggleMobileAccordion = (rowId, btnEl) => {
+  const row = document.getElementById(rowId);
+  if (!row) return;
+  const isOpen = row.classList.toggle("is-open");
+  if (btnEl) {
+    const arrow = btnEl.querySelector(".acc-arrow");
+    if (arrow) arrow.textContent = isOpen ? "▴" : "▾";
+  }
+};
 
 window.openPlayerDetailModal = openPlayerDetailModal;
 window.openHandoffModal = openHandoffModal;
