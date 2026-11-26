@@ -1116,16 +1116,16 @@ function renderPlayersTab() {
         }
       </div>
     </div>
-    <div class="card">
+    <div class="card" style="overflow-x:hidden">
       <table class="players-table">
         <thead>
           <tr>
-            ${isWart ? `<th style="width:32px"><input type="checkbox" ${allSelected ? "checked" : ""} onchange="toggleSelectAllPlayers(this.checked)" title="Alle auswählen" /></th>` : ""}
-            <th style="width:42px">#</th>
-            <th>Spieler &amp; Kontakt</th>
-            <th>Status</th>
-            <th>Einsätze</th>
-            <th>Offen</th>
+            ${isWart ? `<th class="col-select" style="width:30px"><input type="checkbox" ${allSelected ? "checked" : ""} onchange="toggleSelectAllPlayers(this.checked)" title="Alle auswählen" /></th>` : ""}
+            <th class="col-rank" style="width:38px">#</th>
+            <th class="col-player">Spieler &amp; Kontakt</th>
+            <th class="col-status" style="width:125px">Status</th>
+            <th class="col-deployed" style="width:220px">Einsätze</th>
+            <th class="col-open" style="width:85px">Offen</th>
           </tr>
         </thead>
         <tbody>
@@ -1134,20 +1134,16 @@ function renderPlayersTab() {
   state.data.players.forEach((p, idx) => {
     const isSelf = p.id === state.user.id;
     const isChecked = state.selectedPlayerIds.includes(p.id);
-    const paymentParts = [];
-    if (p.iban) paymentParts.push(`🏦 ${esc(p.iban)}`);
-    if (p.paypal) paymentParts.push(`🅿️ ${esc(p.paypal)}`);
-    const paymentText = paymentParts.join(" &bull; ");
-    const hasExtraDetails = Boolean(paymentText || p.mobile_number);
+    const hasExtraDetails = Boolean(p.mobile_number);
     html += `
       <tr class="has-mobile-accordion" id="player-row-${p.id}">
         ${
           isWart
-            ? `<td data-label="Auswahl"><input type="checkbox" ${isChecked ? "checked" : ""} ${isSelf ? "disabled title='Eigener Account'" : ""} onchange="toggleSelectPlayer(${p.id}, this.checked)" /></td>`
+            ? `<td data-label="Auswahl" class="col-select"><input type="checkbox" ${isChecked ? "checked" : ""} ${isSelf ? "disabled title='Eigener Account'" : ""} onchange="toggleSelectPlayer(${p.id}, this.checked)" /></td>`
             : ""
         }
-        <td data-label="#">${idx + 1}${p.list_order_override !== null && p.list_order_override !== undefined ? ` <span class="badge badge-gray" title="Manuelle Position (§ 2 Abs. 4)">#${p.list_order_override}</span>` : ""}</td>
-        <td class="cell-main">
+        <td data-label="#" class="col-rank">${idx + 1}${p.list_order_override !== null && p.list_order_override !== undefined ? ` <span class="badge badge-gray" title="Manuelle Position (§ 2 Abs. 4)">#${p.list_order_override}</span>` : ""}</td>
+        <td class="cell-main col-player">
           <div>
             ${
               isWart
@@ -1158,20 +1154,21 @@ function renderPlayersTab() {
           </div>
           <div class="player-meta">${esc(p.email)}</div>
         </td>
-        <td data-label="Status">
+        <td data-label="Status" class="col-status">
           <div class="player-badges">
-            ${p.is_active_in_list ? `<span class="badge badge-green">Aktiv</span>` : `<span class="badge badge-gray">Ausgenommen</span>`}
-            ${p.is_volunteer_exempt ? `<span class="badge badge-blue">Ehrenamt (§ 7)</span>` : ""}
+            ${p.is_active_in_list ? `<span class="badge badge-green">Aktiv</span>` : `<span class="badge badge-gray">Ausgen.</span>`}
+            ${p.is_volunteer_exempt ? `<span class="badge badge-blue">Ehrenamt</span>` : ""}
           </div>
         </td>
-        <td data-label="Einsätze"><strong>${p.deployedCount}</strong> eingesetzt${p.isDeployedOverridden ? ` <span class="badge badge-gray" style="font-size:0.7rem;vertical-align:middle" title="Manuell korrigiert">korr.</span>` : ""} / ${p.activeAssigned} anges.</td>
-        <td data-label="Offen">${p.openPaymentCents > 0 ? `<strong style="color:var(--danger)">${formatEuro(p.openPaymentCents)}</strong>` : "0,00 €"}</td>
+        <td data-label="Einsätze" class="col-deployed">
+          <strong>${p.deployedCount}</strong> eingesetzt${p.isDeployedOverridden ? ` <span class="badge badge-gray" style="font-size:0.7rem;vertical-align:middle" title="Manuell korrigiert">korr.</span>` : ""} / ${p.activeAssigned} anges.
+        </td>
+        <td data-label="Offen" class="col-open">${p.openPaymentCents > 0 ? `<strong style="color:var(--danger)">${formatEuro(p.openPaymentCents)}</strong>` : "0,00 €"}</td>
         ${
           hasExtraDetails
             ? `
-              <td class="mobile-secondary" data-label="Kontakt &amp; Bank" style="flex-direction:column;align-items:flex-start;text-align:left;background:#f8fafc;border-radius:6px;padding:8px 10px;margin-top:4px">
-                ${p.mobile_number ? `<div style="font-size:0.8rem">📞 ${esc(p.mobile_number)}</div>` : ""}
-                ${paymentText ? `<div style="font-size:0.78rem;color:var(--muted);margin-top:2px">${paymentText}</div>` : ""}
+              <td class="mobile-secondary" data-label="Kontakt" style="flex-direction:column;align-items:flex-start;text-align:left;background:#f8fafc;border-radius:6px;padding:8px 10px;margin-top:4px">
+                <div style="font-size:0.8rem">📞 ${esc(p.mobile_number)}</div>
               </td>
               <td style="padding:0;border:none">
                 <button type="button" class="mobile-accordion-toggle" onclick="toggleMobileAccordion('player-row-${p.id}', this)">

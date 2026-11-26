@@ -585,10 +585,26 @@ th { font-size: 0.76rem; color: var(--muted); text-transform: uppercase; letter-
   font-weight: 700;
 }
 
+.players-table {
+  width: 100%;
+  table-layout: auto;
+}
 .players-table th,
 .players-table td {
-  padding: 8px 8px;
+  padding: 8px 6px;
   vertical-align: middle;
+}
+.players-table th.col-deployed,
+.players-table td.col-deployed {
+  white-space: nowrap;
+}
+.players-table th.col-status,
+.players-table td.col-status {
+  white-space: nowrap;
+}
+.players-table th.col-open,
+.players-table td.col-open {
+  white-space: nowrap;
 }
 .player-meta {
   font-size: 0.78rem;
