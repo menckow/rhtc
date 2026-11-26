@@ -527,7 +527,6 @@ function renderGamesTab() {
             <div class="game-subtitle-row">
               <span class="game-title">${esc(game.title)}</span>
               ${game.is_first_game_of_season ? `<span class="game-tag">1. Saisonspiel (§ 3 Abs. 3)</span>` : ""}
-              ${totalPot > 0 ? `<span class="game-pot-tag">+${formatEuro(totalPot)} Prämie im Topf</span>` : ""}
             </div>
 
             <div class="game-slots-grid">
@@ -633,9 +632,12 @@ function renderGamesTab() {
         }
 
         html += `
-          <div class="ref-slot-card">
+          <div class="ref-slot-card ${ch.payout_pool_cents > 0 ? "has-pot" : ""}">
             <div class="ref-slot-info">
-              <span class="ref-slot-code">Schiri ${ch.slot_number} · ${esc(ch.ref_code || `SR-00${ch.slot_number}`)}</span>
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap">
+                <span class="ref-slot-code">Schiri ${ch.slot_number} · ${esc(ch.ref_code || `SR-00${ch.slot_number}`)}</span>
+                ${ch.payout_pool_cents > 0 ? `<span class="slot-pot-badge" title="Weiterleitungstopf / Übernahme-Prämie für diesen Slot">+${formatEuro(ch.payout_pool_cents)} Topf</span>` : ""}
+              </div>
               <div class="ref-slot-name">${refName}</div>
               ${statusPill}
               ${ch.voluntaryRequester ? `<div style="font-size:0.75rem;color:var(--warn);margin-top:2px">Übernahme durch ${esc(fullName(ch.voluntaryRequester))} angefragt</div>` : ""}
