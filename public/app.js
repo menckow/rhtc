@@ -4933,6 +4933,20 @@ window.copyGameWhatsAppInfo = (gameId) => {
     `*Schiri 1:* ${ref1}\n` +
     `*Schiri 2:* ${ref2}`;
 
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        alert("Spiel-Informationen für WhatsApp kopiert!\n\nDu kannst den Text direkt in die Mannschaftsgruppe einfügen.");
+      })
+      .catch(() => {
+        prompt("Spiel-Info kopieren:", text);
+      });
+  } else {
+    prompt("Spiel-Info kopieren:", text);
+  }
+};
+
 window.saveStatsOverrides = async function (playerId) {
   if (!playerId) return;
   const depEl = document.getElementById("sov-deployed");
