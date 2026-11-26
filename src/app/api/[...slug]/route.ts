@@ -559,6 +559,7 @@ export async function POST(
     }
 
     const randomFirstGame = Boolean(body.randomFirstGame);
+    const shouldAssign = body.assignPlayers !== undefined ? Boolean(body.assignPlayers) : true;
     const existingGames = await repo.games.listBySeason(season.id);
     const existingGamesCount = existingGames.length;
 
@@ -636,22 +637,24 @@ export async function POST(
 
       let ref1Id: number | null = null;
       let ref2Id: number | null = null;
-      if (isFirst && randomFirstGame) {
-        if (activePlayers.length >= 2) {
-          const shuffled = [...activePlayers].sort(() => Math.random() - 0.5);
-          ref1Id = shuffled[0].id;
-          ref2Id = shuffled[1].id;
+      if (shouldAssign) {
+        if (isFirst && randomFirstGame) {
+          if (activePlayers.length >= 2) {
+            const shuffled = [...activePlayers].sort(() => Math.random() - 0.5);
+            ref1Id = shuffled[0].id;
+            ref2Id = shuffled[1].id;
+          }
         }
       }
 
       for (const slot of [1, 2]) {
-        let chosenId: number | null = slot === 1 ? ref1Id : ref2Id;
+        let chosenId: number | null = shouldAssign ? (slot === 1 ? ref1Id : ref2Id) : null;
         let roundNumber = 1;
         const note = isFirst
           ? "Erste Ansetzung der Saison (CSV-Import / Losverfahren § 3 Abs. 3)"
           : "Saison-Ansetzung alphabetisch (CSV-Import § 3 Abs. 4)";
 
-        if (!chosenId) {
+        if (shouldAssign && !chosenId) {
           const next = findNextFreePlayerWithData(activePlayers, inMemoryChains, [], {
             gameIdToAvoidSameGameDouble: game.id,
             deployedOverrides,
@@ -698,6 +701,10 @@ export async function POST(
     const kickoffAt = String(body.kickoff_at || body.kickoffAt || "").trim();
     const isFirst = body.is_first_game_of_season || body.isFirstGameOfSeason ? 1 : 0;
     const seasonId = Number(body.season_id || body.seasonId);
+    const assignPlayers = body.assignPlayers !== undefined ? Boolean(body.assignPlayers) : true;
+    const randomDraw = Boolean(body.randomDraw);
+    let ref1Id = body.ref1Id ? Number(body.ref1Id) : null;
+    let ref2Id = body.ref2Id ? Number(body.ref2Id) : null;
 
     if (!title || !kickoffAt || !seasonId) {
       return NextResponse.json({ error: "Titel, Anpfiff und Saison-ID erforderlich." }, { status: 400 });
@@ -709,14 +716,62 @@ export async function POST(
       kickoff_at: kickoffAt,
       is_first_game_of_season: isFirst,
     });
+
+    const activePlayers = assignPlayers ? await getSortedActivePlayersAsync() : [];
+    if (assignPlayers && isFirst && randomDraw && (!ref1Id || !ref2Id)) {
+      if (activePlayers.length >= 2) {
+        const shuffled = [...activePlayers].sort(() => Math.random() - 0.5);
+        if (!ref1Id) ref1Id = shuffled[0].id;
+        if (!ref2Id) ref2Id = shuffled[1].id;
+      }
+    }
+
+    const existingSeasonGames = assignPlayers ? await repo.games.listBySeason(seasonId) : [];
+    const inMemoryChains = assignPlayers ? await repo.chains.listByGameIds(existingSeasonGames.map((g) => g.id)) : [];
+    const rawOverrides = assignPlayers ? await repo.settings.get("deployed_count_overrides") : null;
+    let deployedOverrides: Record<string, number> = {};
+    if (rawOverrides) {
+      try {
+        deployedOverrides = JSON.parse(rawOverrides);
+      } catch {}
+    }
+
     for (let slot = 1; slot <= 2; slot++) {
+      let chosenId: number | null = assignPlayers ? (slot === 1 ? ref1Id : ref2Id) : null;
+      let roundNumber = 1;
+      const note = isFirst
+        ? "Erste Ansetzung der Saison (§ 3 Abs. 3)"
+        : "Saison-Ansetzung alphabetisch (§ 3 Abs. 4)";
+
+      if (assignPlayers && !chosenId) {
+        const next = findNextFreePlayerWithData(activePlayers, inMemoryChains, [], {
+          gameIdToAvoidSameGameDouble: game.id,
+          deployedOverrides,
+        });
+        chosenId = next.player ? next.player.id : null;
+        roundNumber = next.roundNumber;
+      }
+
       const refCode = await getNextSeasonRefCodeAsync(seasonId);
-      await repo.chains.create({
+      const chain = await repo.chains.create({
         game_id: game.id,
         slot_number: slot,
         ref_code: refCode,
-        status: "UNASSIGNED",
+        round_number: roundNumber,
+        status: chosenId ? "ASSIGNED" : "UNASSIGNED",
+        current_assignee_id: chosenId,
       });
+      inMemoryChains.push(chain);
+
+      if (chosenId) {
+        await repo.events.create({
+          chain_id: chain.id,
+          game_id: game.id,
+          event_type: "INITIAL_ASSIGNMENT",
+          to_user_id: chosenId,
+          public_note: note,
+        });
+      }
     }
     return NextResponse.json({ game });
   }

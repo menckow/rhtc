@@ -2382,18 +2382,29 @@ function renderModal() {
               <label>Anpfiff</label>
               <input type="datetime-local" id="gm-kickoff" required />
             </div>
-            <div class="form-group">
-              <label><input type="checkbox" id="gm-first" style="width:auto;margin-right:6px" onchange="document.getElementById('gm-first-opts').style.display=this.checked?'block':'none'" /> Erstes Spiel der Saison (Losverfahren / Auswahl nach § 3 Abs. 3)</label>
+            <div class="form-group" style="background:var(--card-bg, #f8fafc);padding:10px 12px;border:1px solid var(--border,#e2e8f0);border-radius:6px">
+              <label style="font-weight:600;display:flex;align-items:center;cursor:pointer">
+                <input type="checkbox" id="gm-assign" checked style="width:auto;margin-right:8px" onchange="document.getElementById('gm-assign-opts').style.display=this.checked?'block':'none'" />
+                Schiedsrichter direkt zuweisen (§ 3)
+              </label>
+              <div style="font-size:0.75rem;color:var(--muted);margin-top:2px">
+                Wenn deaktiviert, wird das Spiel mit offenen Slots angelegt (keine Spieler zugewiesen).
+              </div>
             </div>
-            <div id="gm-first-opts" style="display:none;background:#f8fafc;padding:10px;border-radius:8px;margin-bottom:10px">
-              <label><input type="checkbox" id="gm-random" checked style="width:auto;margin-right:6px" /> Erste 2 Schiedsrichter automatisch auslosen</label>
-              <div class="grid-2" style="margin-top:8px">
-                <div class="form-group"><label>Slot 1 (falls manuell)</label><select id="gm-r1"><option value="">Automatisch</option>${playerOpts}</select></div>
-                <div class="form-group"><label>Slot 2 (falls manuell)</label><select id="gm-r2"><option value="">Automatisch</option>${playerOpts}</select></div>
+            <div id="gm-assign-opts" style="margin-bottom:10px">
+              <div class="form-group">
+                <label><input type="checkbox" id="gm-first" style="width:auto;margin-right:6px" onchange="document.getElementById('gm-first-opts').style.display=this.checked?'block':'none'" /> Erstes Spiel der Saison (Losverfahren / Auswahl nach § 3 Abs. 3)</label>
+              </div>
+              <div id="gm-first-opts" style="display:none;background:#f8fafc;padding:10px;border-radius:8px;margin-bottom:10px">
+                <label><input type="checkbox" id="gm-random" checked style="width:auto;margin-right:6px" /> Erste 2 Schiedsrichter automatisch auslosen</label>
+                <div class="grid-2" style="margin-top:8px">
+                  <div class="form-group"><label>Slot 1 (falls manuell)</label><select id="gm-r1"><option value="">Automatisch</option>${playerOpts}</select></div>
+                  <div class="form-group"><label>Slot 2 (falls manuell)</label><select id="gm-r2"><option value="">Automatisch</option>${playerOpts}</select></div>
+                </div>
               </div>
             </div>
             <div class="btn-row">
-              <button type="submit" class="btn btn-primary">Spiel speichern &amp; Schiedsrichter ansetzen</button>
+              <button type="submit" class="btn btn-primary">Spiel anlegen</button>
               <button type="button" class="btn btn-outline" onclick="closeModal()">Abbrechen</button>
             </div>
           </form>
@@ -2534,9 +2545,18 @@ function renderModal() {
             <label>CSV-Datei auswählen</label>
             <input type="file" accept=".csv,text/csv" onchange="handleGamesCsvFile(this)" />
           </div>
+          <div class="form-group" style="background:var(--card-bg, #f8fafc);padding:10px 12px;border:1px solid var(--border,#e2e8f0);border-radius:6px;margin-bottom:12px">
+            <label style="font-weight:600;display:flex;align-items:center;cursor:pointer">
+              <input type="checkbox" id="ig-assign" checked style="width:auto;margin-right:8px" onchange="const r=document.getElementById('ig-random-wrap'); if(r) r.style.display=this.checked?'block':'none'" />
+              Schiedsrichter beim Import automatisch einteilen (§ 3)
+            </label>
+            <div style="font-size:0.75rem;color:var(--muted);margin-top:2px">
+              Wenn deaktiviert, werden alle Spiele als offene Termine ohne zugewiesene Schiedsrichter importiert.
+            </div>
+          </div>
           ${
             state.data.games.length === 0
-              ? `<div class="form-group">
+              ? `<div class="form-group" id="ig-random-wrap">
                   <label><input type="checkbox" id="ig-random" checked style="width:auto;margin-right:6px" /> Erstes Spiel der Saison per Losverfahren besetzen (§ 3 Abs. 3)</label>
                 </div>`
               : ""
@@ -3645,6 +3665,12 @@ function attachModalHandlers() {
     gmForm.onsubmit = async (e) => {
       e.preventDefault();
       try {
+        const assignPlayers = document.getElementById("gm-assign") ? document.getElementById("gm-assign").checked : true;
+        const isFirst = document.getElementById("gm-first") ? document.getElementById("gm-first").checked : false;
+        const randomDraw = document.getElementById("gm-random") ? document.getElementById("gm-random").checked : false;
+        const r1El = document.getElementById("gm-r1");
+        const r2El = document.getElementById("gm-r2");
+
         await api("/api/games", {
           method: "POST",
           body: JSON.stringify({
@@ -3652,10 +3678,11 @@ function attachModalHandlers() {
             title: document.getElementById("gm-title").value,
             location: document.getElementById("gm-loc").value,
             kickoffAt: new Date(document.getElementById("gm-kickoff").value).toISOString(),
-            isFirstGameOfSeason: document.getElementById("gm-first").checked,
-            randomDraw: document.getElementById("gm-random").checked,
-            ref1Id: document.getElementById("gm-r1").value || null,
-            ref2Id: document.getElementById("gm-r2").value || null,
+            assignPlayers,
+            isFirstGameOfSeason: isFirst,
+            randomDraw: randomDraw,
+            ref1Id: (r1El && r1El.value) ? Number(r1El.value) : null,
+            ref2Id: (r2El && r2El.value) ? Number(r2El.value) : null,
           }),
         });
         state.modal = null;
@@ -4068,6 +4095,7 @@ window.handleGamesCsvFile = (input) => {
 
 window.submitGamesCsvImport = async () => {
   try {
+    const assignEl = document.getElementById("ig-assign");
     const randomEl = document.getElementById("ig-random");
     const seasonId =
       state.data?.season?.id ||
@@ -4077,6 +4105,7 @@ window.submitGamesCsvImport = async () => {
       method: "POST",
       body: JSON.stringify({
         seasonId,
+        assignPlayers: assignEl ? assignEl.checked : true,
         randomFirstGame: randomEl ? randomEl.checked : false,
         rows: state.modal.parsedRows,
       }),
