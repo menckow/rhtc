@@ -2326,6 +2326,15 @@ function renderModal() {
     const isPending = chain.status === "PENDING_HANDOFF";
     const actor = isPending ? chain.pendingAssignee : chain.currentAssignee;
     const isExempt = actor ? actor.is_volunteer_exempt : state.user.is_volunteer_exempt;
+    const canSelectPlayer = state.user.role === "SCHIEDSRICHTERWART" || state.user.role === "ADMIN";
+    const currentResponsibleId = actor ? actor.id : null;
+    const playerOpts = canSelectPlayer
+      ? state.data.players
+          .filter((p) => p.is_active_in_list && p.id !== currentResponsibleId)
+          .map((p) => `<option value="${p.id}">${esc(p.last_name)}, ${esc(p.first_name)}</option>`)
+          .join("")
+      : "";
+
     return `
       <div class="modal-backdrop" onclick="if(event.target===this) closeModal()">
         <div class="modal">
@@ -2342,6 +2351,24 @@ function renderModal() {
                 ${isExempt ? `<option value="VOLUNTEER_EXEMPT">Weitergabe ohne Kosten wg. Ehrenamt (§ 7 – 0,00 €)</option>` : ""}
               </select>
             </div>
+            ${
+              canSelectPlayer
+                ? `
+              <div class="form-group" style="background:var(--card-bg, #f8fafc);padding:10px 12px;border:1px solid var(--border,#e2e8f0);border-radius:6px">
+                <label style="font-weight:600;font-size:0.86rem;display:flex;align-items:center;gap:6px">
+                  <span>🎯 Empfänger festlegen (Schiriwart/Admin)</span>
+                </label>
+                <select id="hf-target" style="margin-top:4px">
+                  <option value="">Automatisch (nach Rotationsliste § 3)</option>
+                  ${playerOpts}
+                </select>
+                <div style="font-size:0.75rem;color:var(--muted);margin-top:4px">
+                  Standardmäßig wird die nächste freie Person nach Einsatzliste ermittelt. Du kannst hier aber auch gezielt einen Spieler bestimmen.
+                </div>
+              </div>
+            `
+                : ""
+            }
             <div class="form-group">
               <label>Öffentlicher Hinweis (optional, Pflicht bei &lt; 48h)</label>
               <input type="text" id="hf-note" placeholder="z. B. Beruflich verhindert / Zugausfall" />
@@ -2351,7 +2378,7 @@ function renderModal() {
               <textarea id="hf-hardship" rows="3" placeholder="Nur für den Mannschaftskassenwart sichtbar..."></textarea>
             </div>
             <div class="btn-row">
-              <button type="submit" class="btn btn-primary">An nächste freie Person weitergeben</button>
+              <button type="submit" class="btn btn-primary">Weitergeben</button>
               <button type="button" class="btn btn-outline" onclick="closeModal()">Abbrechen</button>
             </div>
           </form>
@@ -3580,6 +3607,8 @@ function attachModalHandlers() {
       const chainId = state.modal?.chain?.id;
       if (!chainId) return;
       try {
+        const targetEl = document.getElementById("hf-target");
+        const targetUserId = targetEl && targetEl.value ? Number(targetEl.value) : undefined;
         const res = await api(`/api/chains/${chainId}/handoff`, {
           method: "POST",
           body: JSON.stringify({
@@ -3587,6 +3616,7 @@ function attachModalHandlers() {
             publicNote: document.getElementById("hf-note").value,
             hardshipReasonConfidential:
               document.getElementById("hf-hardship")?.value || "",
+            targetUserId,
           }),
         });
         state.modal = null;

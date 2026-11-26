@@ -863,30 +863,42 @@ export async function POST(
       .filter((id): id is number => id !== null && id !== undefined);
     const excludeIds = [fromUser.id, ...previousFromIds];
 
-    let { player: nextPlayer } = await findNextFreePlayerAsync(game.season_id, {
-      excludeUserIds: excludeIds,
-      gameIdToAvoidSameGameDouble: game.id,
-      excludeVolunteerExempt: true,
-      restrictToMinDeployed: true,
-    });
+    let nextPlayer: SafeUser | null = null;
+    const targetUserId = body.targetUserId || body.target_user_id ? Number(body.targetUserId || body.target_user_id) : null;
 
-    if (!nextPlayer) {
-      const res2 = await findNextFreePlayerAsync(game.season_id, {
-        excludeUserIds: [fromUser.id],
+    if (targetUserId && (user.role === "SCHIEDSRICHTERWART" || user.role === "ADMIN")) {
+      const explicitTarget = await repo.users.findById(targetUserId);
+      if (!explicitTarget) {
+        return NextResponse.json({ error: "Ausgewählter Spieler nicht gefunden." }, { status: 404 });
+      }
+      nextPlayer = explicitTarget;
+    } else {
+      const res1 = await findNextFreePlayerAsync(game.season_id, {
+        excludeUserIds: excludeIds,
         gameIdToAvoidSameGameDouble: game.id,
         excludeVolunteerExempt: true,
         restrictToMinDeployed: true,
       });
-      nextPlayer = res2.player;
-    }
+      nextPlayer = res1.player;
 
-    if (!nextPlayer) {
-      const res3 = await findNextFreePlayerAsync(game.season_id, {
-        excludeUserIds: [fromUser.id],
-        gameIdToAvoidSameGameDouble: game.id,
-        excludeVolunteerExempt: true,
-      });
-      nextPlayer = res3.player;
+      if (!nextPlayer) {
+        const res2 = await findNextFreePlayerAsync(game.season_id, {
+          excludeUserIds: [fromUser.id],
+          gameIdToAvoidSameGameDouble: game.id,
+          excludeVolunteerExempt: true,
+          restrictToMinDeployed: true,
+        });
+        nextPlayer = res2.player;
+      }
+
+      if (!nextPlayer) {
+        const res3 = await findNextFreePlayerAsync(game.season_id, {
+          excludeUserIds: [fromUser.id],
+          gameIdToAvoidSameGameDouble: game.id,
+          excludeVolunteerExempt: true,
+        });
+        nextPlayer = res3.player;
+      }
     }
 
     if (!nextPlayer) {
