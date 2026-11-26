@@ -1124,7 +1124,6 @@ function renderPlayersTab() {
             <th>Status</th>
             <th>Einsätze</th>
             <th>Offen</th>
-            ${isWart ? `<th>Aktion</th>` : ""}
           </tr>
         </thead>
         <tbody>
@@ -1137,7 +1136,7 @@ function renderPlayersTab() {
     if (p.iban) paymentParts.push(`🏦 ${esc(p.iban)}`);
     if (p.paypal) paymentParts.push(`🅿️ ${esc(p.paypal)}`);
     const paymentText = paymentParts.join(" &bull; ");
-    const hasExtraDetails = Boolean(paymentText || isWart || p.mobile_number);
+    const hasExtraDetails = Boolean(paymentText || p.mobile_number);
     html += `
       <tr class="has-mobile-accordion" id="player-row-${p.id}">
         ${
@@ -1147,7 +1146,14 @@ function renderPlayersTab() {
         }
         <td data-label="#">${idx + 1}${p.list_order_override !== null && p.list_order_override !== undefined ? ` <span class="badge badge-gray" title="Manuelle Position (§ 2 Abs. 4)">#${p.list_order_override}</span>` : ""}</td>
         <td class="cell-main">
-          <div><strong>${esc(p.last_name)}, ${esc(p.first_name)}</strong> <span class="badge badge-gray">${roleLabel(p.role)}</span></div>
+          <div>
+            ${
+              isWart
+                ? `<strong style="cursor:pointer;color:var(--primary);text-decoration:underline" onclick="openEditPlayerModal(${p.id})" title="Klicken zum Bearbeiten">${esc(p.last_name)}, ${esc(p.first_name)}</strong>`
+                : `<strong>${esc(p.last_name)}, ${esc(p.first_name)}</strong>`
+            }
+            <span class="badge badge-gray">${roleLabel(p.role)}</span>
+          </div>
           <div class="player-meta">${esc(p.email)}</div>
         </td>
         <td data-label="Status">
@@ -1159,23 +1165,15 @@ function renderPlayersTab() {
         <td data-label="Einsätze"><strong>${p.deployedCount}</strong> eingesetzt${p.isDeployedOverridden ? ` <span class="badge badge-gray" style="font-size:0.7rem;vertical-align:middle" title="Manuell korrigiert">korr.</span>` : ""} / ${p.activeAssigned} anges.</td>
         <td data-label="Offen">${p.openPaymentCents > 0 ? `<strong style="color:var(--danger)">${formatEuro(p.openPaymentCents)}</strong>` : "0,00 €"}</td>
         ${
-          isWart
-            ? `<td data-label="Aktion" class="mobile-secondary">
-                <button class="btn btn-primary btn-sm" onclick="openEditPlayerModal(${p.id})">Bearbeiten</button>
-              </td>`
-            : ""
-        }
-        ${
           hasExtraDetails
             ? `
               <td class="mobile-secondary" data-label="Kontakt &amp; Bank" style="flex-direction:column;align-items:flex-start;text-align:left;background:#f8fafc;border-radius:6px;padding:8px 10px;margin-top:4px">
                 ${p.mobile_number ? `<div style="font-size:0.8rem">📞 ${esc(p.mobile_number)}</div>` : ""}
                 ${paymentText ? `<div style="font-size:0.78rem;color:var(--muted);margin-top:2px">${paymentText}</div>` : ""}
-                ${!isWart ? "" : `<div style="width:100%;margin-top:6px"><button class="btn btn-primary btn-sm" style="width:100%" onclick="openEditPlayerModal(${p.id})">✏️ Spieler bearbeiten</button></div>`}
               </td>
               <td style="padding:0;border:none">
                 <button type="button" class="mobile-accordion-toggle" onclick="toggleMobileAccordion('player-row-${p.id}', this)">
-                  <span>Details &amp; Aktionen</span> <span class="acc-arrow">▾</span>
+                  <span>Details</span> <span class="acc-arrow">▾</span>
                 </button>
               </td>
             `
@@ -2679,9 +2677,6 @@ function renderModal() {
 
   if (state.modal.type === "editPlayer") {
     const p = state.modal.player;
-    const canEditDeployed =
-      state.user &&
-      (state.user.role === "ADMIN" || state.user.role === "SCHIEDSRICHTERWART");
     return `
       <div class="modal-backdrop" onclick="if(event.target===this) closeModal()">
         <div class="modal">
@@ -2715,36 +2710,6 @@ function renderModal() {
                 <input type="number" id="ep-order" min="1" placeholder="Alphabetisch (leer)" value="${p.list_order_override ?? ""}" />
               </div>
             </div>
-            ${
-              canEditDeployed
-                ? `
-              <div style="background:var(--card-bg, #f8fafc);padding:12px;border:1px solid var(--border,#e2e8f0);border-radius:6px;margin-bottom:12px">
-                <div style="font-weight:600;font-size:0.9rem;margin-bottom:8px">📊 Statistik-Werte (Manuelle Korrekturen)</div>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-                  <div class="form-group" style="margin-bottom:0">
-                    <label style="font-size:0.8rem">Einsätze (gepfiffen)</label>
-                    <input type="number" id="ep-deployed" min="0" value="${p.deployedCount ?? 0}" />
-                  </div>
-                  <div class="form-group" style="margin-bottom:0">
-                    <label style="font-size:0.8rem">Topf-Prämie (€)</label>
-                    <input type="number" id="ep-earned" step="0.5" min="0" value="${((p.earnedPayoutCents ?? 0) / 100).toFixed(2)}" />
-                  </div>
-                  <div class="form-group" style="margin-bottom:0">
-                    <label style="font-size:0.8rem">Gerettet (Übernahmen)</label>
-                    <input type="number" id="ep-takeover" min="0" value="${p.takeoverCount ?? 0}" />
-                  </div>
-                  <div class="form-group" style="margin-bottom:0">
-                    <label style="font-size:0.8rem">Weitergegeben</label>
-                    <input type="number" id="ep-handoff" min="0" value="${p.handoffCount ?? 0}" />
-                  </div>
-                </div>
-                <div style="font-size:0.75rem;color:var(--muted);margin-top:6px">
-                  Ermöglicht den Start mitten im Spielbetrieb oder Korrekturen.
-                </div>
-              </div>
-            `
-                : ""
-            }
             <div class="form-group">
               <label><input type="checkbox" id="ep-active" style="width:auto;margin-right:6px" ${p.is_active_in_list ? "checked" : ""} /> Aktiv in Schiedsrichterliste (§ 2 Abs. 4)</label>
             </div>
@@ -3805,14 +3770,6 @@ function attachModalHandlers() {
       try {
         const orderVal = document.getElementById("ep-order").value.trim();
         const passVal = document.getElementById("ep-pass").value.trim();
-        const deployedEl = document.getElementById("ep-deployed");
-        const deployedVal = deployedEl ? deployedEl.value.trim() : null;
-        const earnedEl = document.getElementById("ep-earned");
-        const earnedVal = earnedEl ? earnedEl.value.trim() : null;
-        const takeoverEl = document.getElementById("ep-takeover");
-        const takeoverVal = takeoverEl ? takeoverEl.value.trim() : null;
-        const handoffEl = document.getElementById("ep-handoff");
-        const handoffVal = handoffEl ? handoffEl.value.trim() : null;
 
         await api(`/api/users/${playerId}`, {
           method: "PATCH",
@@ -3827,18 +3784,6 @@ function attachModalHandlers() {
             listOrderOverride: orderVal === "" ? null : Number(orderVal),
             isActiveInList: document.getElementById("ep-active").checked,
             isVolunteerExempt: document.getElementById("ep-exempt").checked,
-            ...(deployedVal !== null && deployedVal !== ""
-              ? { deployedCount: Math.max(0, parseInt(deployedVal, 10) || 0) }
-              : {}),
-            ...(earnedVal !== null && earnedVal !== ""
-              ? { earnedPayoutCents: Math.max(0, Math.round(parseFloat(earnedVal.replace(",", ".")) * 100) || 0) }
-              : {}),
-            ...(takeoverVal !== null && takeoverVal !== ""
-              ? { takeoverCount: Math.max(0, parseInt(takeoverVal, 10) || 0) }
-              : {}),
-            ...(handoffVal !== null && handoffVal !== ""
-              ? { handoffCount: Math.max(0, parseInt(handoffVal, 10) || 0) }
-              : {}),
             ...(passVal ? { password: passVal } : {}),
           }),
         });
