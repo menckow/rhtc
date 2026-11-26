@@ -2152,12 +2152,15 @@ function renderStatsTab() {
                 </td>
                 <td data-label="Topf-Verdienst" style="color:var(--success);font-weight:700">
                   ${p.earnedPayoutCents > 0 ? formatEuro(p.earnedPayoutCents) : "0,00 €"}
+                  ${p.isEarnedOverridden ? `<span class="badge badge-gray" style="font-size:0.68rem;font-weight:normal" title="Manuell angepasst">korr.</span>` : ""}
                 </td>
                 <td data-label="Übernahmen" class="mobile-secondary">
                   ${p.takeoverCount > 0 ? `<strong style="color:var(--info)">${p.takeoverCount}×</strong> gerettet` : `<span style="color:var(--muted)">0</span>`}
+                  ${p.isTakeoverOverridden ? `<span class="badge badge-gray" style="font-size:0.68rem" title="Manuell angepasst">korr.</span>` : ""}
                 </td>
                 <td data-label="Weitergaben" class="mobile-secondary">
                   ${p.handoffCount > 0 ? `<span style="color:var(--warn);font-weight:600">${p.handoffCount}×</span> weitergegeben` : `<span style="color:var(--muted)">0</span>`}
+                  ${p.isHandoffOverridden ? `<span class="badge badge-gray" style="font-size:0.68rem" title="Manuell angepasst">korr.</span>` : ""}
                 </td>
                 <td data-label="Offen" class="mobile-secondary">
                   ${p.openPaymentCents > 0 ? `<strong style="color:var(--danger)">${formatEuro(p.openPaymentCents)}</strong>` : "0,00 €"}
@@ -2668,13 +2671,28 @@ function renderModal() {
             ${
               canEditDeployed
                 ? `
-              <div class="form-group" style="background:var(--card-bg, #f8fafc);padding:10px 12px;border:1px solid var(--border,#e2e8f0);border-radius:6px;margin-bottom:12px">
-                <label style="font-weight:600;display:flex;align-items:center;gap:6px">
-                  <span>Einsätze („eingesetzt“ nach § 1 Abs. 4 / § 2)</span>
-                </label>
-                <div style="display:flex;align-items:center;gap:10px;margin-top:4px">
-                  <input type="number" id="ep-deployed" min="0" value="${p.deployedCount ?? 0}" style="width:100px" />
-                  <span style="font-size:0.8rem;color:var(--muted)">Manuelle Korrektur / Vorgabe der Anzahl geleisteter Schiri-Einsätze</span>
+              <div style="background:var(--card-bg, #f8fafc);padding:12px;border:1px solid var(--border,#e2e8f0);border-radius:6px;margin-bottom:12px">
+                <div style="font-weight:600;font-size:0.9rem;margin-bottom:8px">📊 Statistik-Werte (Manuelle Korrekturen)</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                  <div class="form-group" style="margin-bottom:0">
+                    <label style="font-size:0.8rem">Einsätze (gepfiffen)</label>
+                    <input type="number" id="ep-deployed" min="0" value="${p.deployedCount ?? 0}" />
+                  </div>
+                  <div class="form-group" style="margin-bottom:0">
+                    <label style="font-size:0.8rem">Topf-Prämie (€)</label>
+                    <input type="number" id="ep-earned" step="0.5" min="0" value="${((p.earnedPayoutCents ?? 0) / 100).toFixed(2)}" />
+                  </div>
+                  <div class="form-group" style="margin-bottom:0">
+                    <label style="font-size:0.8rem">Gerettet (Übernahmen)</label>
+                    <input type="number" id="ep-takeover" min="0" value="${p.takeoverCount ?? 0}" />
+                  </div>
+                  <div class="form-group" style="margin-bottom:0">
+                    <label style="font-size:0.8rem">Weitergegeben</label>
+                    <input type="number" id="ep-handoff" min="0" value="${p.handoffCount ?? 0}" />
+                  </div>
+                </div>
+                <div style="font-size:0.75rem;color:var(--muted);margin-top:6px">
+                  Ermöglicht den Start mitten im Spielbetrieb oder Korrekturen.
                 </div>
               </div>
             `
@@ -2829,23 +2847,62 @@ function renderModal() {
             </div>
             <div class="metric-card">
               <div class="metric-card-val" style="color:var(--success)">${formatEuro(p.earnedPayoutCents || 0)}</div>
-              <div class="metric-card-lbl">Topf-Prämie</div>
+              <div class="metric-card-lbl">Topf-Prämie ${p.isEarnedOverridden ? `(korr.)` : ""}</div>
             </div>
             <div class="metric-card">
               <div class="metric-card-val" style="color:var(--info)">${p.takeoverCount || 0}×</div>
-              <div class="metric-card-lbl">Gerettet</div>
+              <div class="metric-card-lbl">Gerettet ${p.isTakeoverOverridden ? `(korr.)` : ""}</div>
             </div>
             <div class="metric-card">
               <div class="metric-card-val" style="color:var(--warn)">${p.handoffCount || 0}×</div>
-              <div class="metric-card-lbl">Weitergegeben</div>
+              <div class="metric-card-lbl">Weitergegeben ${p.isHandoffOverridden ? `(korr.)` : ""}</div>
             </div>
           </div>
 
           ${
-            p.isDeployedOverridden
+            (state.user.role === "SCHIEDSRICHTERWART" || state.user.role === "ADMIN")
+              ? `
+                <div style="background:var(--card-bg, #f8fafc);border:1px solid var(--border, #e2e8f0);border-radius:8px;padding:12px 14px;margin-bottom:16px">
+                  <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="const f=document.getElementById('stats-override-form'); f.style.display = f.style.display==='none'?'block':'none'">
+                    <span style="font-weight:600;font-size:0.88rem;display:flex;align-items:center;gap:6px">
+                      ⚙️ <span>Statistik-Werte anpassen (Schiriwart/Admin)</span>
+                    </span>
+                    <button type="button" class="btn btn-outline" style="font-size:0.75rem;padding:3px 8px">Bearbeiten ▾</button>
+                  </div>
+                  <form id="stats-override-form" style="display:none;margin-top:12px;border-top:1px solid var(--border,#e2e8f0);padding-top:10px" onsubmit="event.preventDefault(); saveStatsOverrides(${p.id})">
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                      <div class="form-group" style="margin-bottom:6px">
+                        <label style="font-size:0.8rem">Gepfiffene Spiele:</label>
+                        <input type="number" id="sov-deployed" min="0" value="${p.deployedCount ?? 0}" />
+                      </div>
+                      <div class="form-group" style="margin-bottom:6px">
+                        <label style="font-size:0.8rem">Topf-Prämie (€):</label>
+                        <input type="number" id="sov-earned" step="0.5" min="0" value="${((p.earnedPayoutCents ?? 0) / 100).toFixed(2)}" />
+                      </div>
+                      <div class="form-group" style="margin-bottom:6px">
+                        <label style="font-size:0.8rem">Gerettet (Übernahmen):</label>
+                        <input type="number" id="sov-takeover" min="0" value="${p.takeoverCount ?? 0}" />
+                      </div>
+                      <div class="form-group" style="margin-bottom:6px">
+                        <label style="font-size:0.8rem">Weitergegeben:</label>
+                        <input type="number" id="sov-handoff" min="0" value="${p.handoffCount ?? 0}" />
+                      </div>
+                    </div>
+                    <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
+                      <button type="submit" class="btn btn-primary" style="font-size:0.82rem;padding:5px 12px">Korrekturen speichern</button>
+                      <span style="font-size:0.75rem;color:var(--muted)">Werte werden direkt in den Statistiken und Ranglisten übernommen.</span>
+                    </div>
+                  </form>
+                </div>
+              `
+              : ""
+          }
+
+          ${
+            p.isDeployedOverridden || p.isEarnedOverridden || p.isTakeoverOverridden || p.isHandoffOverridden
               ? `
                 <div class="alert alert-info" style="font-size:0.83rem;margin-bottom:16px">
-                  ℹ️ <strong>Manuelle Anpassung:</strong> Die Einsatzzahl für diesen Spieler wurde durch die Schiedsrichter-Administration manuell auf <strong>${p.deployedCount}</strong> festgelegt (nach § 1 Abs. 4 / § 2).
+                  ℹ️ <strong>Manuelle Anpassung:</strong> Für diesen Spieler wurden Statistik-Werte durch die Schiedsrichter-Administration manuell angepasst oder vorgegeben.
                 </div>
               `
               : ""
@@ -3693,6 +3750,13 @@ function attachModalHandlers() {
         const passVal = document.getElementById("ep-pass").value.trim();
         const deployedEl = document.getElementById("ep-deployed");
         const deployedVal = deployedEl ? deployedEl.value.trim() : null;
+        const earnedEl = document.getElementById("ep-earned");
+        const earnedVal = earnedEl ? earnedEl.value.trim() : null;
+        const takeoverEl = document.getElementById("ep-takeover");
+        const takeoverVal = takeoverEl ? takeoverEl.value.trim() : null;
+        const handoffEl = document.getElementById("ep-handoff");
+        const handoffVal = handoffEl ? handoffEl.value.trim() : null;
+
         await api(`/api/users/${playerId}`, {
           method: "PATCH",
           body: JSON.stringify({
@@ -3708,6 +3772,15 @@ function attachModalHandlers() {
             isVolunteerExempt: document.getElementById("ep-exempt").checked,
             ...(deployedVal !== null && deployedVal !== ""
               ? { deployedCount: Math.max(0, parseInt(deployedVal, 10) || 0) }
+              : {}),
+            ...(earnedVal !== null && earnedVal !== ""
+              ? { earnedPayoutCents: Math.max(0, Math.round(parseFloat(earnedVal.replace(",", ".")) * 100) || 0) }
+              : {}),
+            ...(takeoverVal !== null && takeoverVal !== ""
+              ? { takeoverCount: Math.max(0, parseInt(takeoverVal, 10) || 0) }
+              : {}),
+            ...(handoffVal !== null && handoffVal !== ""
+              ? { handoffCount: Math.max(0, parseInt(handoffVal, 10) || 0) }
               : {}),
             ...(passVal ? { password: passVal } : {}),
           }),
@@ -4860,17 +4933,58 @@ window.copyGameWhatsAppInfo = (gameId) => {
     `*Schiri 1:* ${ref1}\n` +
     `*Schiri 2:* ${ref2}`;
 
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard
-      .writeText(text)
-      .then(() => {
-        alert("Spiel-Informationen für WhatsApp kopiert!\n\nDu kannst den Text direkt in die Mannschaftsgruppe einfügen.");
-      })
-      .catch(() => {
-        prompt("Spiel-Info kopieren:", text);
-      });
-  } else {
-    prompt("Spiel-Info kopieren:", text);
+window.saveStatsOverrides = async function (playerId) {
+  if (!playerId) return;
+  const depEl = document.getElementById("sov-deployed");
+  const earEl = document.getElementById("sov-earned");
+  const takEl = document.getElementById("sov-takeover");
+  const hanEl = document.getElementById("sov-handoff");
+
+  const depVal = depEl ? depEl.value.trim() : null;
+  const earVal = earEl ? earEl.value.trim() : null;
+  const takVal = takEl ? takEl.value.trim() : null;
+  const hanVal = hanEl ? hanEl.value.trim() : null;
+
+  try {
+    await api(`/api/users/${playerId}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        ...(depVal !== null && depVal !== ""
+          ? { deployedCount: Math.max(0, parseInt(depVal, 10) || 0) }
+          : {}),
+        ...(earVal !== null && earVal !== ""
+          ? { earnedPayoutCents: Math.max(0, Math.round(parseFloat(earVal.replace(",", ".")) * 100) || 0) }
+          : {}),
+        ...(takVal !== null && takVal !== ""
+          ? { takeoverCount: Math.max(0, parseInt(takVal, 10) || 0) }
+          : {}),
+        ...(hanVal !== null && hanVal !== ""
+          ? { handoffCount: Math.max(0, parseInt(hanVal, 10) || 0) }
+          : {}),
+      }),
+    });
+    // Aktualisiere modal player falls noch offen
+    if (state.modal?.player?.id === playerId) {
+      if (depVal !== null && depVal !== "") {
+        state.modal.player.deployedCount = Math.max(0, parseInt(depVal, 10) || 0);
+        state.modal.player.isDeployedOverridden = true;
+      }
+      if (earVal !== null && earVal !== "") {
+        state.modal.player.earnedPayoutCents = Math.max(0, Math.round(parseFloat(earVal.replace(",", ".")) * 100) || 0);
+        state.modal.player.isEarnedOverridden = true;
+      }
+      if (takVal !== null && takVal !== "") {
+        state.modal.player.takeoverCount = Math.max(0, parseInt(takVal, 10) || 0);
+        state.modal.player.isTakeoverOverridden = true;
+      }
+      if (hanVal !== null && hanVal !== "") {
+        state.modal.player.handoffCount = Math.max(0, parseInt(hanVal, 10) || 0);
+        state.modal.player.isHandoffOverridden = true;
+      }
+    }
+    await loadDashboard();
+  } catch (err) {
+    alert("Fehler beim Speichern: " + err.message);
   }
 };
 

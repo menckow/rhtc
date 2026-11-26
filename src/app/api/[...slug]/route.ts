@@ -157,9 +157,10 @@ export async function GET(
       allUsersRaw.filter((u) => !u.is_active_in_list)
     );
 
-    const [seasonGames, rawOverrides, treasuryIban, treasuryRecipient, treasuryPaypal] = await Promise.all([
+    const [seasonGames, rawOverrides, rawStatsOverrides, treasuryIban, treasuryRecipient, treasuryPaypal] = await Promise.all([
       isAllTime ? repo.games.listAll() : repo.games.listBySeason(Number(season.id)),
       repo.settings.get("deployed_count_overrides"),
+      repo.settings.get("player_stats_overrides"),
       repo.settings.get("treasury_iban"),
       repo.settings.get("treasury_recipient"),
       repo.settings.get("treasury_paypal"),
@@ -168,6 +169,12 @@ export async function GET(
     if (rawOverrides) {
       try {
         deployedOverrides = JSON.parse(rawOverrides);
+      } catch {}
+    }
+    let statsOverrides: Record<string, { earnedPayoutCents?: number; takeoverCount?: number; handoffCount?: number }> = {};
+    if (rawStatsOverrides) {
+      try {
+        statsOverrides = JSON.parse(rawStatsOverrides);
       } catch {}
     }
     const gameIds = seasonGames.map((g) => g.id);
@@ -227,7 +234,7 @@ export async function GET(
         .filter((e) => e.payment_status === "PAID")
         .reduce((acc, e) => acc + (e.fee_total_cents - e.waived_amount_cents), 0);
 
-      const earnedPayoutCents = chains
+      const calculatedEarnedPayoutCents = chains
         .filter(
           (c) =>
             c.current_assignee_id === p.id &&
@@ -236,18 +243,27 @@ export async function GET(
         )
         .reduce((acc, c) => acc + c.payout_pool_cents, 0);
 
-      const takeoverCount = sanitizedEvents.filter(
+      const calculatedTakeoverCount = sanitizedEvents.filter(
         (e) =>
           e.to_user_id === p.id &&
           (e.event_type === "HANDOFF_ACCEPTED" || e.event_type === "VOLUNTEER_APPROVED") &&
           e.from_user_id !== p.id
       ).length;
 
-      const handoffCount = sanitizedEvents.filter(
+      const calculatedHandoffCount = sanitizedEvents.filter(
         (e) =>
           e.from_user_id === p.id &&
           ["REGULAR_HANDOFF", "HARDSHIP", "VOLUNTEER_EXEMPT", "SQUAD_NOMINATION", "VOLUNTEER_AUTO_FORWARD"].includes(e.event_type)
       ).length;
+
+      const pStatsOv = statsOverrides[String(p.id)] ?? statsOverrides[p.id];
+      const hasEarnedOverride = pStatsOv?.earnedPayoutCents !== undefined && pStatsOv?.earnedPayoutCents !== null;
+      const hasTakeoverOverride = pStatsOv?.takeoverCount !== undefined && pStatsOv?.takeoverCount !== null;
+      const hasHandoffOverride = pStatsOv?.handoffCount !== undefined && pStatsOv?.handoffCount !== null;
+
+      const earnedPayoutCents = hasEarnedOverride ? Number(pStatsOv.earnedPayoutCents) : calculatedEarnedPayoutCents;
+      const takeoverCount = hasTakeoverOverride ? Number(pStatsOv.takeoverCount) : calculatedTakeoverCount;
+      const handoffCount = hasHandoffOverride ? Number(pStatsOv.handoffCount) : calculatedHandoffCount;
 
       return {
         ...p,
@@ -257,8 +273,11 @@ export async function GET(
         openPaymentCents,
         paidCents,
         earnedPayoutCents,
+        isEarnedOverridden: hasEarnedOverride,
         takeoverCount,
+        isTakeoverOverridden: hasTakeoverOverride,
         handoffCount,
+        isHandoffOverridden: hasHandoffOverride,
       };
     });
 
@@ -1601,6 +1620,59 @@ export async function PATCH(
         overrides[String(targetId)] = Math.max(0, parseInt(String(deployedVal), 10) || 0);
       }
       await repo.settings.set("deployed_count_overrides", JSON.stringify(overrides));
+    }
+
+    // Zusätzliche Statistik-Korrekturen (Topf-Prämie, Gerettet/Übernahmen, Weitergegeben)
+    const earnedVal = body.earnedPayoutCents !== undefined ? body.earnedPayoutCents : body.earned_payout_cents;
+    const takeoverVal = body.takeoverCount !== undefined ? body.takeoverCount : body.takeover_count;
+    const handoffVal = body.handoffCount !== undefined ? body.handoffCount : body.handoff_count;
+
+    if (
+      (earnedVal !== undefined || takeoverVal !== undefined || handoffVal !== undefined) &&
+      (user.role === "SCHIEDSRICHTERWART" || user.role === "ADMIN")
+    ) {
+      const rawStatsOverrides = await repo.settings.get("player_stats_overrides");
+      let statsOverrides: Record<string, { earnedPayoutCents?: number; takeoverCount?: number; handoffCount?: number }> = {};
+      if (rawStatsOverrides) {
+        try {
+          statsOverrides = JSON.parse(rawStatsOverrides);
+        } catch {}
+      }
+
+      const pKey = String(targetId);
+      const current = statsOverrides[pKey] || {};
+
+      if (earnedVal !== undefined) {
+        if (earnedVal === null || earnedVal === "") {
+          delete current.earnedPayoutCents;
+        } else {
+          current.earnedPayoutCents = Math.max(0, Math.round(Number(earnedVal)) || 0);
+        }
+      }
+
+      if (takeoverVal !== undefined) {
+        if (takeoverVal === null || takeoverVal === "") {
+          delete current.takeoverCount;
+        } else {
+          current.takeoverCount = Math.max(0, parseInt(String(takeoverVal), 10) || 0);
+        }
+      }
+
+      if (handoffVal !== undefined) {
+        if (handoffVal === null || handoffVal === "") {
+          delete current.handoffCount;
+        } else {
+          current.handoffCount = Math.max(0, parseInt(String(handoffVal), 10) || 0);
+        }
+      }
+
+      if (Object.keys(current).length === 0) {
+        delete statsOverrides[pKey];
+      } else {
+        statsOverrides[pKey] = current;
+      }
+
+      await repo.settings.set("player_stats_overrides", JSON.stringify(statsOverrides));
     }
 
     await repo.users.update(targetId, updates);

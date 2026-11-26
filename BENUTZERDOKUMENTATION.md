@@ -106,7 +106,13 @@ Das Navigationsmenü öffnet sich mobil und auf dem PC über den Button **`☰ M
   - Allen tatsächlich gepfiffenen Spielen (Datum, Gegner, Slot, verdiente Prämie).
   - Historie übernommener Einsätze (von wem gerettet).
   - Weitergegebenen Ansetzungen (Grund, Empfänger, Gebührenstatus).
-  - Transparenter Angabe manueller Korrekturen nach § 1 Abs. 4 / § 2.
+  - Transparenter Kennzeichnung manueller Korrekturen mit dezentem `(korr.)`-Badge.
+  - **Direkte Statistik-Korrektur (für Schiedsrichterwart & Admin):** Ermöglicht die nachträgliche Anpassung aller 4 Statistik-Kennzahlen direkt im Detail-Modal oder in der Schiedsrichterliste:
+    - Gepfiffene Spiele (`deployedCount`)
+    - Topf-Prämie (`earnedPayoutCents`)
+    - Gerettet / Übernahmen (`takeoverCount`)
+    - Weitergegeben (`handoffCount`)
+    Ideal für den Start der Anwendung mitten im laufenden Spielbetrieb!
   - Dynamischer Anpassung an die gewählte Saison (oder Ewige Tabelle).
 
 ### 6. 👥 Schiedsrichterliste (§ 2) *(Schiriwart & Admin)*
@@ -116,7 +122,7 @@ Das Navigationsmenü öffnet sich mobil und auf dem PC über den Button **`☰ M
   - **Bankverbindung (IBAN und PayPal)** für Auszahlungen und Prämien pflegen
   - Rolle und Berechtigungen festlegen
   - Status "Aktiv in Schiedsrichterliste" und "Ehrenamtliche Befreiung (§ 7)" umschalten
-  - **Einsätze („eingesetzt“ nach § 1 Abs. 4 / § 2):** Die Anzahl der geleisteten Schiedsrichter-Einsätze kann bei Bedarf manuell angepasst/vorgegeben werden (wird bei manueller Korrektur mit `korr.` gekennzeichnet und direkt vom automatischen Zuteilungs-Algorithmus berücksichtigt).
+  - **Statistik-Werte & Einsätze („eingesetzt“ nach § 1 Abs. 4 / § 2):** Die Anzahl der geleisteten Schiedsrichter-Einsätze sowie Topf-Prämien, Übernahmen („gerettet“) und Weitergaben können bei Bedarf manuell vorgegeben oder korrigiert werden (werden bei manueller Korrektur mit `korr.` gekennzeichnet und direkt vom Zuteilungs- und Ranking-System berücksichtigt).
   - Rotationsreihenfolge (Listen-Position) überschreiben
   - Passwort zurücksetzen
 - **Stammdaten-Pflege durch Spieler:** Spieler können ihre eigene IBAN und PayPal-Adresse auch selbständig über das Profil-Menü („Meine Stammdaten“) eintragen und aktualisieren.
