@@ -76,6 +76,14 @@ function fullName(u) {
   return u ? `${u.first_name} ${u.last_name}` : "Offen";
 }
 
+function getRemainingOpenCents(ev) {
+  if (!ev) return 0;
+  return Math.max(
+    0,
+    (ev.fee_total_cents || 0) - (ev.waived_amount_cents || 0) - (ev.credit_offset_cents || 0)
+  );
+}
+
 function roleLabel(role) {
   const map = {
     PLAYER: "Spieler",
@@ -402,25 +410,30 @@ function renderGamesTab() {
   if (bountySlots.length > 0) {
     html += `
       <div class="bounty-banner">
-        <div class="bounty-banner-title">Offene Übernahme-Prämien (Finanzieller Topf)</div>
+        <div class="bounty-banner-header">
+          <div class="bounty-banner-title">Offene Übernahme-Prämien (Finanzieller Topf)</div>
+          <span class="bounty-count-badge">${bountySlots.length} ${bountySlots.length === 1 ? "offener Topf" : "offene Töpfe"}</span>
+        </div>
         <div class="bounty-list">
           ${bountySlots
             .map(({ g, ch }) => {
               const canTake = canVolunteerForChain(ch);
               return `
-                <div class="bounty-item">
-                  <div>
-                    <div style="font-weight:700;font-size:0.88rem">${esc(g.title)}</div>
-                    <div style="font-size:0.76rem;color:#d6d1c4">${formatDate(g.kickoff_at)} &bull; ${esc(ch.ref_code || `Slot ${ch.slot_number}`)}</div>
-                  </div>
-                  <div style="display:flex;align-items:center;gap:8px">
-                    <span class="bounty-amount">+${formatEuro(ch.payout_pool_cents)}</span>
-                    ${
-                      canTake
-                        ? `<button class="btn btn-warn btn-sm" onclick="requestVolunteer(${ch.id})">Übernehmen</button>`
-                        : ""
-                    }
-                  </div>
+                <div class="bounty-item-wrap">
+                  <article class="bounty-item">
+                    <div class="bounty-item-info">
+                      <div class="bounty-item-title">${esc(g.title)}</div>
+                      <div class="bounty-item-meta">${formatDate(g.kickoff_at)} &bull; ${esc(ch.ref_code || `Slot ${ch.slot_number}`)}</div>
+                    </div>
+                    <div class="bounty-item-actions">
+                      <span class="bounty-amount">+${formatEuro(ch.payout_pool_cents)}</span>
+                      ${
+                        canTake
+                          ? `<button class="btn btn-warn btn-sm" onclick="requestVolunteer(${ch.id})">Übernehmen</button>`
+                          : ""
+                      }
+                    </div>
+                  </article>
                 </div>
               `;
             })
@@ -926,7 +939,7 @@ function renderTasksTab() {
 
   // Offene Zahlungen für mich (Weitergabe-Gebühren)
   const myOpenPayments = (state.data.events || []).filter(
-    (e) => e.from_user_id === uId && e.payment_status === "OPEN" && (e.fee_total_cents - (e.waived_amount_cents || 0)) > 0
+    (e) => e.from_user_id === uId && e.payment_status === "OPEN" && getRemainingOpenCents(e) > 0
   );
 
   if (pendingForMe.length === 0 && voluntaryRequestsForMe.length === 0 && myOpenPayments.length === 0) {
@@ -937,7 +950,7 @@ function renderTasksTab() {
   if (myOpenPayments.length > 0) {
     const ts = state.data?.treasurySettings || {};
     const totalMyOpenCents = myOpenPayments.reduce(
-      (acc, e) => acc + (e.fee_total_cents - (e.waived_amount_cents || 0)),
+      (acc, e) => acc + getRemainingOpenCents(e),
       0
     );
     const myOpenRefCodes = myOpenPayments.map((ev) => {
@@ -966,7 +979,8 @@ function renderTasksTab() {
               const g = state.data?.games?.find((game) => game.id === ev.game_id);
               const ch = g?.chains?.find((c) => c.id === ev.chain_id);
               const refCode = ch?.ref_code || (ch?.slot_number ? `Slot ${ch.slot_number}` : "");
-              const due = ev.fee_total_cents - (ev.waived_amount_cents || 0);
+              const due = getRemainingOpenCents(ev);
+              const totalFee = Math.max(0, (ev.fee_total_cents || 0) - (ev.waived_amount_cents || 0));
               const payUrl = ts.paypal ? buildPayPalUrl(ts.paypal, due, `${refCode ? `${refCode} ` : ""}${g?.title || ""}`.trim()) : "";
               return `
                 <div style="background:#ffffff;border:1px solid #fed7d7;border-radius:6px;padding:8px 12px;display:flex;justify-content:space-between;align-items:center;font-size:0.85rem;flex-wrap:wrap;gap:6px">
@@ -975,7 +989,7 @@ function renderTasksTab() {
                       ${refCode ? `<span class="badge badge-gray">${esc(refCode)}</span>` : ""}
                       <strong>${esc(g?.title || "Schiri-Spiel")}</strong>
                     </div>
-                    <div style="color:var(--muted);font-size:0.75rem;margin-top:2px">Weitergabe am ${formatDate(ev.created_at)} ${ev.public_note ? `&bull; „${esc(ev.public_note)}“` : ""}</div>
+                    <div style="color:var(--muted);font-size:0.75rem;margin-top:2px">Weitergabe am ${formatDate(ev.created_at)} ${ev.public_note ? `&bull; „${esc(ev.public_note)}“` : ""}${ev.credit_offset_cents > 0 ? ` &bull; Gesamt: ${formatEuro(totalFee)} (${formatEuro(ev.credit_offset_cents)} bereits verrechnet)` : ""}</div>
                   </div>
                   <div style="display:flex;align-items:center;gap:8px">
                     <strong style="color:var(--danger)">${formatEuro(due)}</strong>
@@ -1217,10 +1231,10 @@ function renderTreasuryTab() {
 
     // 2. Offene Weitergabe-Gebühren des Spielers
     const playerOpenEvents = paymentEvents.filter(
-      (e) => e.from_user_id === p.id && e.payment_status === "OPEN"
+      (e) => e.from_user_id === p.id && e.payment_status === "OPEN" && getRemainingOpenCents(e) > 0
     );
     const openFeeCents = playerOpenEvents.reduce(
-      (acc, e) => acc + Math.max(0, (e.fee_total_cents || 0) - (e.waived_amount_cents || 0)),
+      (acc, e) => acc + getRemainingOpenCents(e),
       0
     );
 
@@ -1387,7 +1401,8 @@ function renderTreasuryTab() {
                     const g = state.data?.games?.find((game) => game.id === ev.game_id);
                     const ch = g?.chains?.find((c) => c.id === ev.chain_id);
                     const refCode = ch?.ref_code || (ch?.slot_number ? `Slot ${ch.slot_number}` : `SR-${ev.chain_id}`);
-                    const due = ev.fee_total_cents - ev.waived_amount_cents;
+                    const totalFee = Math.max(0, (ev.fee_total_cents || 0) - (ev.waived_amount_cents || 0));
+                    const remainingOpen = getRemainingOpenCents(ev);
                     return `
                       <tr class="has-mobile-accordion" id="pay-ev-row-${ev.id}">
                         <td data-label="ID"><span class="badge badge-gray">${esc(refCode)}</span></td>
@@ -1395,7 +1410,11 @@ function renderTreasuryTab() {
                           <strong>${esc(fullName(ev.fromUser))}</strong>
                           ${g ? `<div class="player-meta">${esc(g.title)}</div>` : ""}
                         </td>
-                        <td data-label="Betrag"><strong>${formatEuro(due)}</strong> ${ev.waived_amount_cents > 0 ? `<div style="font-size:0.75rem;color:var(--muted)">(Erlass: ${formatEuro(ev.waived_amount_cents)})</div>` : ""}</td>
+                        <td data-label="Betrag">
+                          <strong>${formatEuro(totalFee)}</strong>
+                          ${ev.waived_amount_cents > 0 ? `<div style="font-size:0.75rem;color:var(--muted)">(Erlass: ${formatEuro(ev.waived_amount_cents)})</div>` : ""}
+                          ${ev.payment_status === "OPEN" && ev.credit_offset_cents > 0 ? `<div style="font-size:0.75rem;color:var(--muted)">(Verrechnet: ${formatEuro(ev.credit_offset_cents)} &bull; Offen: ${formatEuro(remainingOpen)})</div>` : ""}
+                        </td>
                         <td data-label="Status">${chainPaymentBadge(ev) || esc(ev.payment_status)}</td>
                         <td data-label="Datum" class="mobile-secondary">${formatDate(ev.created_at)}</td>
                         <td data-label="Härtefall (§ 8)" class="mobile-secondary">
@@ -1600,6 +1619,7 @@ function renderChainsTab() {
 
     const parts = [];
     let hasInitialNode = false;
+    let hasPayoutMilestone = false;
     const milestones = [];
 
     for (const ev of asc) {
@@ -1621,15 +1641,22 @@ function renderChainsTab() {
         ev.event_type === "CONFIRMED_DEPLOYED" ||
         ev.event_type === "PAYOUT_SETTLED"
       ) {
-        const u = ev.fromUser || ev.toUser;
-        const uName = u ? fullName(u) : "";
-        const label =
-          ev.event_type === "REPORTED_DEPLOYED"
-            ? `Einsatz gemeldet${uName ? ` (${uName})` : ""}`
-            : ev.event_type === "CONFIRMED_DEPLOYED"
-            ? `Einsatz bestätigt${uName ? ` (${uName})` : ""}`
-            : `Topf ausgezahlt${uName ? ` an ${uName}` : ""}`;
-        milestones.push({ label, at: ev.created_at });
+        if (ev.event_type === "PAYOUT_SETTLED") {
+          if (hasPayoutMilestone) continue;
+          hasPayoutMilestone = true;
+          const recipient = ev.toUser || ch.currentAssignee;
+          const rName = recipient ? fullName(recipient) : "";
+          const label = `Topf ausgezahlt${rName ? ` an ${rName}` : ""}`;
+          milestones.push({ label, at: ev.created_at });
+        } else {
+          const referee = ev.fromUser || ch.currentAssignee;
+          const uName = referee ? fullName(referee) : "";
+          const label =
+            ev.event_type === "REPORTED_DEPLOYED"
+              ? `Einsatz gemeldet${uName ? ` (${uName})` : ""}`
+              : `Einsatz bestätigt${uName ? ` (${uName})` : ""}`;
+          milestones.push({ label, at: ev.created_at });
+        }
         continue;
       }
 
@@ -3111,11 +3138,13 @@ function renderModal() {
                 <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px">
                   ${openEvents
                     .map((ev) => {
-                      const due = Math.max(0, (ev.fee_total_cents || 0) - (ev.waived_amount_cents || 0));
+                      const due = getRemainingOpenCents(ev);
+                      const totalFee = Math.max(0, (ev.fee_total_cents || 0) - (ev.waived_amount_cents || 0));
                       return `
                         <div style="background:#ffffff;border:1px solid var(--border);border-left:3px solid var(--danger);border-radius:6px;padding:6px 10px;font-size:0.82rem;display:flex;justify-content:space-between;align-items:center">
                           <div>
                             Weitergabe am ${formatDate(ev.created_at)}
+                            ${ev.credit_offset_cents > 0 ? `<div style="color:var(--muted);font-size:0.75rem">Gesamt: ${formatEuro(totalFee)} (${formatEuro(ev.credit_offset_cents)} bereits verrechnet)</div>` : ""}
                             ${ev.public_note ? `<div style="color:var(--muted);font-size:0.75rem">Hinweis: „${esc(ev.public_note)}“</div>` : ""}
                           </div>
                           <strong style="color:var(--danger)">-${formatEuro(due)}</strong>
@@ -3316,7 +3345,7 @@ function render() {
   }
 
   const myOpenPaymentsCount = (state.data.events || []).filter(
-    (e) => e.from_user_id === state.user.id && e.payment_status === "OPEN" && (e.fee_total_cents - (e.waived_amount_cents || 0)) > 0
+    (e) => e.from_user_id === state.user.id && e.payment_status === "OPEN" && getRemainingOpenCents(e) > 0
   ).length;
 
   const pendingCount =
@@ -4392,7 +4421,7 @@ window.openSettlePlayerModal = (playerId) => {
 
   // Sammle alle offenen Weitergabe-Gebühren
   const openEvents = (state.data.events || []).filter(
-    (e) => e.from_user_id === p.id && e.payment_status === "OPEN"
+    (e) => e.from_user_id === p.id && e.payment_status === "OPEN" && getRemainingOpenCents(e) > 0
   );
 
   const totalPayoutCreditCents = readyChains.reduce(
@@ -4400,7 +4429,7 @@ window.openSettlePlayerModal = (playerId) => {
     0
   );
   const totalOpenFeeCents = openEvents.reduce(
-    (acc, e) => acc + Math.max(0, (e.fee_total_cents || 0) - (e.waived_amount_cents || 0)),
+    (acc, e) => acc + getRemainingOpenCents(e),
     0
   );
   const netBalanceCents = totalPayoutCreditCents - totalOpenFeeCents;
@@ -4612,7 +4641,7 @@ window.openPaymentReminderModal = (eventId) => {
   const ch = g?.chains?.find((c) => c.id === ev.chain_id);
   const refCode = ch?.ref_code || (ch?.slot_number ? `Slot ${ch.slot_number}` : `SR-${ev.chain_id}`);
   const gameTitle = g ? g.title : "Schiedsrichter-Ansetzung";
-  const due = ev.fee_total_cents - ev.waived_amount_cents;
+  const due = getRemainingOpenCents(ev);
 
   const ts = state.data?.treasurySettings || {};
   const ibanStr = ts.iban ? `\n🏦 IBAN: ${ts.iban}\n👤 Empfänger: ${ts.recipient || "RHTC 2. Herren Kasse"}` : "";
@@ -4637,10 +4666,10 @@ window.openPlayerFeeReminderModal = (playerId) => {
   if (!p) return;
 
   const openEvents = (state.data?.events || []).filter(
-    (e) => e.from_user_id === p.id && e.payment_status === "OPEN"
+    (e) => e.from_user_id === p.id && e.payment_status === "OPEN" && getRemainingOpenCents(e) > 0
   );
   const totalOpenFeeCents = openEvents.reduce(
-    (acc, e) => acc + Math.max(0, (e.fee_total_cents || 0) - (e.waived_amount_cents || 0)),
+    (acc, e) => acc + getRemainingOpenCents(e),
     0
   );
 

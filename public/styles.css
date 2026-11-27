@@ -508,29 +508,89 @@ th { font-size: 0.76rem; color: var(--muted); text-transform: uppercase; letter-
   margin-bottom: 16px;
   box-shadow: 0 4px 14px rgba(17, 17, 17, 0.14);
 }
+.bounty-banner-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: safe center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
 .bounty-banner-title {
   color: var(--gold);
   font-weight: 800;
   font-size: 0.95rem;
-  margin-bottom: 10px;
   display: flex;
   align-items: center;
   gap: 8px;
 }
+.bounty-count-badge {
+  background: rgba(212, 160, 23, 0.18);
+  border: 1px solid rgba(212, 160, 23, 0.45);
+  color: var(--gold);
+  font-size: 0.76rem;
+  font-weight: 700;
+  padding: 2px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
 .bounty-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: 12px;
+}
+.bounty-item-wrap {
+  container: bounty-card / inline-size;
+  display: flex;
+  min-inline-size: 0;
 }
 .bounty-item {
+  flex: 1;
+  min-inline-size: 0;
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(212, 160, 23, 0.45);
   border-radius: 8px;
-  padding: 10px 12px;
+  padding: 12px 14px;
   display: flex;
+  flex-direction: column;
   justify-content: space-between;
-  align-items: center;
   gap: 10px;
+}
+.bounty-item-info {
+  min-inline-size: 0;
+}
+.bounty-item-title {
+  font-weight: 700;
+  font-size: 0.9rem;
+  line-height: 1.3;
+  overflow-wrap: break-word;
+}
+.bounty-item-meta {
+  font-size: 0.77rem;
+  color: #d6d1c4;
+  margin-block-start: 3px;
+}
+.bounty-item-actions {
+  display: flex;
+  align-items: safe center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-block-start: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  margin-block-start: auto;
+  flex-shrink: 0;
+}
+@container bounty-card (inline-size > 430px) {
+  .bounty-item {
+    flex-direction: row;
+    align-items: safe center;
+  }
+  .bounty-item-actions {
+    padding-block-start: 0;
+    border-top: none;
+    margin-block-start: 0;
+    margin-inline-start: auto;
+  }
 }
 .bounty-amount {
   background: var(--gold);

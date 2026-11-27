@@ -34,6 +34,30 @@ async function getAuthUser(req: Request): Promise<SafeUser | null> {
   return getSessionUserFromHeader(cookieHeader);
 }
 
+function isGenuineWaiver(ev: EventRow): boolean {
+  return (
+    ev.hardship_status === "APPROVED_FULL" ||
+    ev.hardship_status === "APPROVED_PARTIAL" ||
+    ev.payment_status === "WAIVED_FULL" ||
+    ev.payment_status === "WAIVED_PARTIAL"
+  );
+}
+
+function normalizeEventAmounts(
+  ev: EventRow,
+  creditOffsets: Record<string, number>
+): { actualWaivedCents: number; creditOffsetCents: number } {
+  const genuineWaived = isGenuineWaiver(ev) ? (ev.waived_amount_cents || 0) : 0;
+  // Rückwärtskompatibilität: Ältere Teilverrechnungen hatten waived_amount_cents ohne Härtefall gesetzt
+  const legacyOffset =
+    !isGenuineWaiver(ev) && (ev.waived_amount_cents || 0) > 0
+      ? ev.waived_amount_cents || 0
+      : 0;
+  const storedOffset = Number(creditOffsets[String(ev.id)] ?? creditOffsets[ev.id] ?? 0) || 0;
+  const creditOffsetCents = Math.max(storedOffset, legacyOffset);
+  return { actualWaivedCents: genuineWaived, creditOffsetCents };
+}
+
 // ---------------------------------------------------------------------------
 // GET Handlers
 // ---------------------------------------------------------------------------
@@ -158,14 +182,22 @@ export async function GET(
     );
 
     const targetSeasonKey = isAllTime ? "all" : String(season.id);
-    const [seasonGames, rawOverrides, rawStatsOverrides, treasuryIban, treasuryRecipient, treasuryPaypal] = await Promise.all([
+    const [seasonGames, rawOverrides, rawStatsOverrides, rawCreditOffsets, treasuryIban, treasuryRecipient, treasuryPaypal] = await Promise.all([
       isAllTime ? repo.games.listAll() : repo.games.listBySeason(Number(season.id)),
       repo.settings.get("deployed_count_overrides"),
       repo.settings.get("player_stats_overrides"),
+      repo.settings.get("event_credit_offsets"),
       repo.settings.get("treasury_iban"),
       repo.settings.get("treasury_recipient"),
       repo.settings.get("treasury_paypal"),
     ]);
+
+    let creditOffsets: Record<string, number> = {};
+    if (rawCreditOffsets) {
+      try {
+        creditOffsets = JSON.parse(rawCreditOffsets);
+      } catch {}
+    }
 
     // Deployed overrides: unterstützt saisonspezifisch { [seasonId]: { [userId]: number } } mit Fallback auf flaches Format { [userId]: number }
     let deployedOverrides: Record<string, number> = {};
@@ -200,14 +232,19 @@ export async function GET(
     ]);
 
     const isTreasurer = user.role === "KASSENWART";
-    const sanitizedEvents = events.map((ev) => ({
-      ...ev,
-      fromUser: ev.from_user_id ? userMap.get(ev.from_user_id) ?? null : null,
-      toUser: ev.to_user_id ? userMap.get(ev.to_user_id) ?? null : null,
-      hardship_reason_confidential: isTreasurer
-        ? ev.hardship_reason_confidential
-        : null,
-    }));
+    const sanitizedEvents = events.map((ev) => {
+      const { actualWaivedCents, creditOffsetCents } = normalizeEventAmounts(ev, creditOffsets);
+      return {
+        ...ev,
+        waived_amount_cents: actualWaivedCents,
+        credit_offset_cents: creditOffsetCents,
+        fromUser: ev.from_user_id ? userMap.get(ev.from_user_id) ?? null : null,
+        toUser: ev.to_user_id ? userMap.get(ev.to_user_id) ?? null : null,
+        hardship_reason_confidential: isTreasurer
+          ? ev.hardship_reason_confidential
+          : null,
+      };
+    });
 
     const gamesWithChains = seasonGames.map((g) => ({
       ...g,
@@ -245,10 +282,19 @@ export async function GET(
       const pEvents = sanitizedEvents.filter((e) => e.from_user_id === p.id);
       const openPaymentCents = pEvents
         .filter((e) => e.payment_status === "OPEN")
-        .reduce((acc, e) => acc + (e.fee_total_cents - e.waived_amount_cents), 0);
-      const paidCents = pEvents
-        .filter((e) => e.payment_status === "PAID")
-        .reduce((acc, e) => acc + (e.fee_total_cents - e.waived_amount_cents), 0);
+        .reduce(
+          (acc, e) =>
+            acc + Math.max(0, e.fee_total_cents - e.waived_amount_cents - (e.credit_offset_cents || 0)),
+          0
+        );
+      const paidCents = pEvents.reduce((acc, e) => {
+        const netFee = Math.max(0, e.fee_total_cents - e.waived_amount_cents);
+        if (e.payment_status === "PAID") return acc + netFee;
+        if (e.payment_status === "OPEN" && (e.credit_offset_cents || 0) > 0) {
+          return acc + Math.min(netFee, e.credit_offset_cents || 0);
+        }
+        return acc;
+      }, 0);
 
       const calculatedEarnedPayoutCents = chains
         .filter(
@@ -301,12 +347,21 @@ export async function GET(
       (acc, e) => acc + (e.team_pot_cents || 0),
       0
     );
-    const totalOpenPaymentsCents = events
+    const totalOpenPaymentsCents = sanitizedEvents
       .filter((e) => e.payment_status === "OPEN")
-      .reduce((acc, e) => acc + (e.fee_total_cents - e.waived_amount_cents), 0);
-    const totalPaidCents = events
-      .filter((e) => e.payment_status === "PAID")
-      .reduce((acc, e) => acc + (e.fee_total_cents - e.waived_amount_cents), 0);
+      .reduce(
+        (acc, e) =>
+          acc + Math.max(0, e.fee_total_cents - e.waived_amount_cents - (e.credit_offset_cents || 0)),
+        0
+      );
+    const totalPaidCents = sanitizedEvents.reduce((acc, e) => {
+      const netFee = Math.max(0, e.fee_total_cents - e.waived_amount_cents);
+      if (e.payment_status === "PAID") return acc + netFee;
+      if (e.payment_status === "OPEN" && (e.credit_offset_cents || 0) > 0) {
+        return acc + Math.min(netFee, e.credit_offset_cents || 0);
+      }
+      return acc;
+    }, 0);
     const totalPayoutPoolOpenCents = chains
       .filter((c) => !c.payout_settled && c.payout_pool_cents > 0)
       .reduce((acc, c) => acc + c.payout_pool_cents, 0);
@@ -1348,8 +1403,16 @@ export async function POST(
         return NextResponse.json({ error: "Keine Berechtigung." }, { status: 403 });
       }
       const decision = String(body.decision || "APPROVED_FULL");
-      const waivedCents = Number(body.waived_amount_cents || (decision === "APPROVED_FULL" ? 1500 : 0));
-      const newPaymentStatus = decision === "APPROVED_FULL" ? "WAIVED_FULL" : "OPEN";
+      const waivedCents =
+        decision === "REJECTED"
+          ? 0
+          : Number(body.waivedAmountCents ?? body.waived_amount_cents ?? (decision === "APPROVED_FULL" ? 1500 : 0));
+      const newPaymentStatus =
+        decision === "APPROVED_FULL"
+          ? "WAIVED_FULL"
+          : decision === "APPROVED_PARTIAL"
+          ? "OPEN"
+          : "OPEN";
       await repo.events.update(eventId, {
         hardship_status: decision,
         waived_amount_cents: waivedCents,
@@ -1430,15 +1493,25 @@ export async function POST(
     );
 
     // 2. Finde alle offenen Weitergabe-Gebühren des Spielers (innerhalb der Saison-Spiele)
-    const allEvents = candidateGameIds.size > 0 ? await repo.events.listByGameIds(Array.from(candidateGameIds)) : [];
+    const [allEvents, rawCreditOffsets] = await Promise.all([
+      candidateGameIds.size > 0 ? repo.events.listByGameIds(Array.from(candidateGameIds)) : Promise.resolve([]),
+      repo.settings.get("event_credit_offsets"),
+    ]);
+    let creditOffsets: Record<string, number> = {};
+    if (rawCreditOffsets) {
+      try {
+        creditOffsets = JSON.parse(rawCreditOffsets);
+      } catch {}
+    }
+
     const openFeeEvents = allEvents
       .filter((e) => e.from_user_id === playerId && e.payment_status === "OPEN")
       .sort((a, b) => a.id - b.id); // Älteste zuerst
 
-    const totalOpenFeeCents = openFeeEvents.reduce(
-      (acc, e) => acc + Math.max(0, (e.fee_total_cents || 0) - (e.waived_amount_cents || 0)),
-      0
-    );
+    const totalOpenFeeCents = openFeeEvents.reduce((acc, e) => {
+      const { actualWaivedCents, creditOffsetCents } = normalizeEventAmounts(e, creditOffsets);
+      return acc + Math.max(0, (e.fee_total_cents || 0) - actualWaivedCents - creditOffsetCents);
+    }, 0);
 
     if (readyChains.length === 0 && openFeeEvents.length === 0) {
       return NextResponse.json({ error: "Keine offenen Posten für diesen Spieler vorhanden." }, { status: 400 });
@@ -1449,66 +1522,56 @@ export async function POST(
     let totalOffsetAmountCents = 0;
     let netPayoutCents = totalPayoutCreditCents;
 
-    // A: Alle berechtigten Töpfe als ausgezahlt markieren
+    // A: Falls Verrechnung gewünscht und Guthaben vorhanden ist (ohne waived_amount_cents / Erlass zu verändern!)
+    if (offsetOpenFees && totalPayoutCreditCents > 0 && openFeeEvents.length > 0) {
+      let remainingCredit = totalPayoutCreditCents;
+      let offsetsChanged = false;
+
+      for (const ev of openFeeEvents) {
+        const { actualWaivedCents, creditOffsetCents } = normalizeEventAmounts(ev, creditOffsets);
+        const feeDue = Math.max(0, (ev.fee_total_cents || 0) - actualWaivedCents - creditOffsetCents);
+        if (feeDue <= 0) continue;
+
+        if (remainingCredit >= feeDue) {
+          // Gebühr vollständig durch Guthaben beglichen (Gesamtbetrag bleibt erhalten, kein Erlass!)
+          await repo.events.update(ev.id, { payment_status: "PAID" });
+          creditOffsets[String(ev.id)] = creditOffsetCents + feeDue;
+          offsetsChanged = true;
+          remainingCredit -= feeDue;
+          totalOffsetAmountCents += feeDue;
+          paidFeeCount++;
+        } else {
+          // Teilverrechnung: Speichere angerechnetes Guthaben separat (kein Erlass!)
+          creditOffsets[String(ev.id)] = creditOffsetCents + remainingCredit;
+          offsetsChanged = true;
+          totalOffsetAmountCents += remainingCredit;
+          remainingCredit = 0;
+          break;
+        }
+      }
+      if (offsetsChanged) {
+        await repo.settings.set("event_credit_offsets", JSON.stringify(creditOffsets));
+      }
+      netPayoutCents = Math.max(0, totalPayoutCreditCents - totalOffsetAmountCents);
+    }
+
+    // B: Alle berechtigten Töpfe als ausgezahlt markieren (jeweils genau EIN Event pro Kette, kein Duplikat!)
+    const targetName = `${targetPlayer.first_name} ${targetPlayer.last_name}`.trim();
     for (const ch of readyChains) {
       await repo.chains.update(ch.id, { payout_settled: 1 });
+      const noteDetail =
+        offsetOpenFees && totalOffsetAmountCents > 0
+          ? `Topf-Auszahlung von ${(ch.payout_pool_cents / 100).toFixed(2)} € an ${targetName} (Sammelabwicklung: ${(totalOffsetAmountCents / 100).toFixed(2)} € mit offenen Gebühren verrechnet, Netto: ${(netPayoutCents / 100).toFixed(2)} €)`
+          : `Topf-Auszahlung von ${(ch.payout_pool_cents / 100).toFixed(2)} € an ${targetName} (Sammelabwicklung)`;
       await repo.events.create({
         chain_id: ch.id,
         game_id: ch.game_id,
         event_type: "PAYOUT_SETTLED",
         from_user_id: user.id,
         to_user_id: playerId,
-        public_note: `Topf-Auszahlung von ${(ch.payout_pool_cents / 100).toFixed(2)} € (Sammelabwicklung)`,
+        public_note: noteDetail,
       });
       settledPoolCount++;
-    }
-
-    // B: Falls Verrechnung gewünscht und Guthaben vorhanden ist
-    if (offsetOpenFees && totalPayoutCreditCents > 0 && openFeeEvents.length > 0) {
-      let remainingCredit = totalPayoutCreditCents;
-
-      for (const ev of openFeeEvents) {
-        const feeDue = Math.max(0, (ev.fee_total_cents || 0) - (ev.waived_amount_cents || 0));
-        if (feeDue <= 0) continue;
-
-        if (remainingCredit >= feeDue) {
-          // Gebühr vollständig durch Guthaben beglichen
-          await repo.events.update(ev.id, { payment_status: "PAID" });
-          remainingCredit -= feeDue;
-          totalOffsetAmountCents += feeDue;
-          paidFeeCount++;
-        } else {
-          // Teilverrechnung: Erhöhe Erlass / Verrechnung um das verbleibende Guthaben
-          const currentWaived = ev.waived_amount_cents || 0;
-          await repo.events.update(ev.id, {
-            waived_amount_cents: currentWaived + remainingCredit,
-            // bleibt OPEN für die Restsumme
-          });
-          totalOffsetAmountCents += remainingCredit;
-          remainingCredit = 0;
-          break;
-        }
-      }
-      netPayoutCents = Math.max(0, totalPayoutCreditCents - totalOffsetAmountCents);
-    }
-
-    // Revisionssichere Dokumentation der Sammelabwicklung
-    if (settledPoolCount > 0 || paidFeeCount > 0) {
-      const summaryMsg = offsetOpenFees
-        ? `Sammelabwicklung mit Verrechnung: ${(totalPayoutCreditCents / 100).toFixed(2)} € Topfguthaben verrechnet mit ${(totalOffsetAmountCents / 100).toFixed(2)} € Gebühren. Netto-Auszahlung: ${(netPayoutCents / 100).toFixed(2)} €.`
-        : `Sammelauszahlung ohne Verrechnung: ${settledPoolCount} Töpfe über ${(totalPayoutCreditCents / 100).toFixed(2)} € an ${targetPlayer.first_name} ${targetPlayer.last_name} ausgezahlt.`;
-
-      // System-Event zur Dokumentation
-      const dummyChainId = readyChains[0]?.id || openFeeEvents[0]?.chain_id || 1;
-      const dummyGameId = readyChains[0]?.game_id || openFeeEvents[0]?.game_id || 1;
-      await repo.events.create({
-        chain_id: dummyChainId,
-        game_id: dummyGameId,
-        event_type: "PAYOUT_SETTLED",
-        from_user_id: user.id,
-        to_user_id: playerId,
-        public_note: summaryMsg,
-      });
     }
 
     return NextResponse.json({
