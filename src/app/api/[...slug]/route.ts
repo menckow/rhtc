@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import nodePath from "node:path";
 import { NextResponse } from "next/server";
 import { repo } from "@/lib/repository";
 import {
@@ -74,6 +76,38 @@ export async function GET(
   if (path === "/auth/me") {
     const user = await getAuthUser(req);
     return NextResponse.json({ user });
+  }
+
+  // 1a. /api/satzung (Dynamisch aus satzung_schiri.md geladen, für alle angemeldeten Nutzer)
+  if (path === "/satzung") {
+    const user = await getAuthUser(req);
+    if (!user) {
+      return NextResponse.json({ error: "Nicht angemeldet." }, { status: 401 });
+    }
+    try {
+      const mdPath = nodePath.join(process.cwd(), "satzung_schiri.md");
+      const [markdown, stat] = await Promise.all([
+        fs.promises.readFile(mdPath, "utf8"),
+        fs.promises.stat(mdPath),
+      ]);
+      return NextResponse.json(
+        {
+          markdown,
+          updatedAt: stat.mtime.toISOString(),
+          sourceFile: "satzung_schiri.md",
+        },
+        {
+          headers: {
+            "Cache-Control": "no-store, max-age=0",
+          },
+        }
+      );
+    } catch {
+      return NextResponse.json(
+        { error: "Die Datei satzung_schiri.md konnte nicht gelesen werden." },
+        { status: 404 }
+      );
+    }
   }
 
   // 1b. /api/calendar/feed/:token (oder :token.ics)

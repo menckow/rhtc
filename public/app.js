@@ -12,6 +12,11 @@ const state = {
   chainSearch: "",
   statsSort: "deployed", // deployed | earned | takeovers | handoffs
   statsSearch: "",
+  satzungMarkdown: null,
+  satzungUpdatedAt: null,
+  satzungLoading: false,
+  satzungError: null,
+  satzungSearch: "",
   selectedPlayerIds: [],
   modal: null,
   error: null,
@@ -106,10 +111,10 @@ function statusBadge(status) {
     UNASSIGNED: ["Offen", "badge-red"],
     ASSIGNED: ["Zugewiesen (unbestätigt)", "badge-amber"],
     PENDING_HANDOFF: ["Weitergeleitet (unbestätigt)", "badge-amber"],
-    CONFIRMED: ["Bestätigt", "badge-blue"],
+    CONFIRMED: ["Ansetzung zugesagt", "badge-blue"],
     VOLUNTARY_REQUESTED: ["Übernahme angefragt", "badge-amber"],
     REPORTED_DEPLOYED: ["Gepfiffen (gemeldet)", "badge-amber"],
-    CONFIRMED_DEPLOYED: ["Eingesetzt (§ 1 Abs. 4)", "badge-green"],
+    CONFIRMED_DEPLOYED: ["Gepfiffen & bestätigt (§ 6.1)", "badge-green"],
   };
   const [label, cls] = map[status] || [status, "badge-gray"];
   return `<span class="badge ${cls}">${label}</span>`;
@@ -552,20 +557,20 @@ function renderGamesTab() {
         const assignee = ch.pendingAssignee || ch.currentAssignee;
         const refName = assignee ? `${esc(fullName(assignee))}${isResponsible ? " (Du)" : ""}` : "Noch niemand";
 
-        // Status pill
+        // Status pill – klare visuelle & sprachliche Trennung zwischen Vorab-Zusage und gepfiffenem Einsatz (§ 6.1)
         let statusPill = "";
         if (ch.status === "CONFIRMED_DEPLOYED") {
-          statusPill = `<span class="slot-status-pill status-deployed"><span class="status-dot"></span> Bestätigt (§ 6.1)</span>`;
+          statusPill = `<span class="slot-status-pill status-deployed" title="Spiel tatsächlich gepfiffen und vom Schiedsrichterwart nach § 6 Abs. 1 offiziell bestätigt (zählt als Einsatz nach § 1 Abs. 4)"><span class="status-icon" aria-hidden="true">✓✓</span> Gepfiffen &amp; bestätigt (§ 6.1)</span>`;
         } else if (ch.status === "REPORTED_DEPLOYED") {
-          statusPill = `<span class="slot-status-pill status-deployed"><span class="status-dot"></span> Gepfiffen</span>`;
+          statusPill = `<span class="slot-status-pill status-reported" title="Vom Schiedsrichter als gepfiffen gemeldet (§ 6.2) – wartet auf Bestätigung durch den Schiedsrichterwart"><span class="status-icon" aria-hidden="true">⏱</span> Gepfiffen (gemeldet)</span>`;
         } else if (ch.status === "CONFIRMED") {
-          statusPill = `<span class="slot-status-pill status-confirmed"><span class="status-dot"></span> Bestätigt</span>`;
+          statusPill = `<span class="slot-status-pill status-confirmed" title="Schiedsrichter hat die Ansetzung vorab angenommen – Spiel steht noch bevor (§ 1 Abs. 3)"><span class="status-icon" aria-hidden="true">📅</span> Ansetzung zugesagt</span>`;
         } else if (ch.status === "VOLUNTARY_REQUESTED") {
-          statusPill = `<span class="slot-status-pill status-unconfirmed"><span class="status-dot"></span> Übernahme angefragt</span>`;
+          statusPill = `<span class="slot-status-pill status-unconfirmed" title="Freiwillige Übernahme angefragt – wartet auf Zustimmung (§ 5 Abs. 2)"><span class="status-dot" aria-hidden="true"></span> Übernahme angefragt</span>`;
         } else if (!assignee) {
-          statusPill = `<span class="slot-status-pill status-unassigned"><span class="status-dot"></span> Unbesetzt</span>`;
+          statusPill = `<span class="slot-status-pill status-unassigned" title="Diesem Slot ist noch kein Schiedsrichter zugewiesen"><span class="status-dot" aria-hidden="true"></span> Unbesetzt</span>`;
         } else {
-          statusPill = `<span class="slot-status-pill status-unconfirmed"><span class="status-dot"></span> Unbestätigt</span>`;
+          statusPill = `<span class="slot-status-pill status-unconfirmed" title="Wartet noch auf Annahme durch den angesetzten Schiedsrichter"><span class="status-dot" aria-hidden="true"></span> Unbestätigt</span>`;
         }
 
         // Primary action determination
@@ -1844,6 +1849,438 @@ function renderChainsTab() {
   `;
 }
 
+function renderInlineMarkdown(rawText, highlightQuery = "") {
+  let html = esc(rawText || "");
+  // Inline-Code
+  html = html.replace(/`([^`]+)`/g, '<code class="bylaw-code">$1</code>');
+  // Links [Text](https://...)
+  html = html.replace(
+    /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+    '<a href="$2" target="_blank" rel="noopener noreferrer" class="bylaw-link">$1</a>'
+  );
+  // Fett + Kursiv
+  html = html.replace(/\*\*\*([^*]+)\*\*\*/g, "<strong><em>$1</em></strong>");
+  // Fett
+  html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  // Kursiv
+  html = html.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+
+  if (highlightQuery && highlightQuery.trim()) {
+    const safeQ = esc(highlightQuery.trim()).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (safeQ) {
+      const re = new RegExp(`(${safeQ})`, "gi");
+      html = html
+        .split(/(<[^>]+>)/g)
+        .map((part) => (part.startsWith("<") ? part : part.replace(re, '<mark class="bylaw-mark">$1</mark>')))
+        .join("");
+    }
+  }
+  return html;
+}
+
+function renderMarkdownBlocksHtml(lines, highlightQuery = "") {
+  const out = [];
+  let paragraphLines = [];
+  let activeClause = null; // { num, leadBold, textLines, listItems }
+  let listType = null; // "ul" | "ol"
+  let listItems = [];
+  let quoteLines = [];
+  let tableLines = [];
+  let pendingHr = false;
+
+  const emitPendingHrIfNeeded = () => {
+    if (pendingHr && out.length > 0) {
+      out.push('<hr class="bylaw-hr" />');
+    }
+    pendingHr = false;
+  };
+
+  const flushList = () => {
+    if (!listType || listItems.length === 0) return;
+    const tag = listType;
+    const cls = tag === "ol" ? "bylaw-list bylaw-list-ordered" : "bylaw-list";
+    const itemsHtml = listItems.map((it) => `<li>${renderInlineMarkdown(it, highlightQuery)}</li>`).join("");
+    if (activeClause) {
+      activeClause.extraHtml.push(`<${tag} class="${cls}">${itemsHtml}</${tag}>`);
+    } else {
+      emitPendingHrIfNeeded();
+      out.push(`<${tag} class="${cls}">${itemsHtml}</${tag}>`);
+    }
+    listType = null;
+    listItems = [];
+  };
+
+  const flushClause = () => {
+    if (!activeClause) return;
+    flushList();
+    emitPendingHrIfNeeded();
+    const bodyText = renderInlineMarkdown(activeClause.textLines.join(" "), highlightQuery);
+    const leadHtml = activeClause.leadBold
+      ? `<strong>${renderInlineMarkdown(activeClause.leadBold, highlightQuery)}</strong> `
+      : "";
+    out.push(`
+      <div class="bylaw-clause">
+        <span class="bylaw-clause-num">(${esc(activeClause.num)})</span>
+        <div class="bylaw-clause-body">
+          <p class="bylaw-clause-text">${leadHtml}${bodyText}</p>
+          ${activeClause.extraHtml.join("")}
+        </div>
+      </div>
+    `);
+    activeClause = null;
+  };
+
+  const flushParagraph = () => {
+    if (paragraphLines.length === 0) return;
+    emitPendingHrIfNeeded();
+    out.push(`<p class="bylaw-paragraph">${renderInlineMarkdown(paragraphLines.join(" "), highlightQuery)}</p>`);
+    paragraphLines = [];
+  };
+
+  const flushQuote = () => {
+    if (quoteLines.length === 0) return;
+    emitPendingHrIfNeeded();
+    out.push(`<blockquote class="bylaw-quote">${renderInlineMarkdown(quoteLines.join(" "), highlightQuery)}</blockquote>`);
+    quoteLines = [];
+  };
+
+  const flushTable = () => {
+    if (tableLines.length === 0) return;
+    emitPendingHrIfNeeded();
+    const parsedRows = tableLines.map((row) =>
+      row
+        .replace(/^\||\|$/g, "")
+        .split("|")
+        .map((c) => c.trim())
+    );
+    const hasSep =
+      parsedRows.length >= 2 &&
+      parsedRows[1].every((c) => /^:?-{2,}:?$/.test(c));
+    const headRow = hasSep ? parsedRows[0] : null;
+    const bodyRows = hasSep ? parsedRows.slice(2) : parsedRows;
+    const theadHtml = headRow
+      ? `<thead><tr>${headRow.map((h) => `<th>${renderInlineMarkdown(h, highlightQuery)}</th>`).join("")}</tr></thead>`
+      : "";
+    const tbodyHtml = `<tbody>${bodyRows
+      .map((r) => `<tr>${r.map((c) => `<td>${renderInlineMarkdown(c, highlightQuery)}</td>`).join("")}</tr>`)
+      .join("")}</tbody>`;
+    out.push(`<div class="bylaw-table-wrap"><table class="bylaw-table">${theadHtml}${tbodyHtml}</table></div>`);
+    tableLines = [];
+  };
+
+  const flushAll = () => {
+    flushList();
+    flushClause();
+    flushParagraph();
+    flushQuote();
+    flushTable();
+  };
+
+  for (const rawLine of lines) {
+    const trimmed = rawLine.trim();
+
+    if (!trimmed) {
+      flushAll();
+      continue;
+    }
+
+    // Horizontale Linie (---, ***, ___)
+    if (/^([-*_])\1{2,}$/.test(trimmed)) {
+      flushAll();
+      pendingHr = true;
+      continue;
+    }
+
+    // Unterüberschriften (### oder ####)
+    const subMatch = trimmed.match(/^(#{3,4})\s+(.+)$/);
+    if (subMatch) {
+      flushAll();
+      emitPendingHrIfNeeded();
+      const lvl = subMatch[1].length;
+      out.push(`<h${lvl} class="bylaw-subheading">${renderInlineMarkdown(subMatch[2], highlightQuery)}</h${lvl}>`);
+      continue;
+    }
+
+    // Ungeordnete Liste (*, -, + gefolgt von Leerzeichen)
+    const ulMatch = trimmed.match(/^[*+-]\s+(.+)$/);
+    if (ulMatch) {
+      flushParagraph();
+      flushQuote();
+      flushTable();
+      if (listType && listType !== "ul") flushList();
+      listType = "ul";
+      listItems.push(ulMatch[1]);
+      continue;
+    }
+
+    // Geordnete Liste (1. ...)
+    const olMatch = trimmed.match(/^\d+\.\s+(.+)$/);
+    if (olMatch) {
+      flushParagraph();
+      flushQuote();
+      flushTable();
+      if (listType && listType !== "ol") flushList();
+      listType = "ol";
+      listItems.push(olMatch[1]);
+      continue;
+    }
+
+    // Zitat (> ...)
+    const quoteMatch = trimmed.match(/^>\s?(.*)$/);
+    if (quoteMatch) {
+      flushList();
+      flushClause();
+      flushParagraph();
+      flushTable();
+      quoteLines.push(quoteMatch[1]);
+      continue;
+    }
+
+    // Markdown-Tabelle (| ... |)
+    if (/^\|.+\|$/.test(trimmed)) {
+      flushList();
+      flushClause();
+      flushParagraph();
+      flushQuote();
+      tableLines.push(trimmed);
+      continue;
+    }
+
+    // Satzungs-Absatz wie **(1)** ... oder **(3) „Angesetzt“** ...
+    const clauseMatch = trimmed.match(/^\*\*\((\d+[a-z]?)\)(?:\s+([^*]+))?\*\*\s*(.*)$/);
+    if (clauseMatch) {
+      flushAll();
+      activeClause = {
+        num: clauseMatch[1],
+        leadBold: clauseMatch[2] ? clauseMatch[2].trim() : "",
+        textLines: clauseMatch[3] ? [clauseMatch[3]] : [],
+        extraHtml: [],
+      };
+      continue;
+    }
+
+    // Fortsetzung einer laufenden Zeile
+    flushList();
+    flushQuote();
+    flushTable();
+    if (activeClause && activeClause.extraHtml.length > 0) {
+      flushClause();
+    }
+    if (activeClause) {
+      activeClause.textLines.push(trimmed);
+    } else {
+      paragraphLines.push(trimmed);
+    }
+  }
+
+  flushAll();
+  return out.join("");
+}
+
+function parseSatzungDocument(md) {
+  const lines = String(md || "").replace(/\r\n/g, "\n").split("\n");
+  let docTitle = "Schiedsrichtersatzung";
+  let titleFound = false;
+  const introLines = [];
+  const sections = [];
+  let currentSection = null;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!titleFound && /^#\s+(.+)$/.test(trimmed)) {
+      docTitle = trimmed.replace(/^#\s+/, "").trim();
+      titleFound = true;
+      continue;
+    }
+
+    const h2Match = trimmed.match(/^##\s+(.+)$/);
+    if (h2Match) {
+      const fullHeading = h2Match[1].trim();
+      const paraMatch = fullHeading.match(/^(§+\s*\d+[a-z]?)\s+(.+)$/i);
+      const id = `satzung-sec-${sections.length + 1}`;
+      currentSection = {
+        id,
+        fullHeading,
+        badge: paraMatch ? paraMatch[1].trim() : null,
+        title: paraMatch ? paraMatch[2].trim() : fullHeading,
+        lines: [],
+      };
+      sections.push(currentSection);
+      continue;
+    }
+
+    if (currentSection) {
+      currentSection.lines.push(line);
+    } else {
+      introLines.push(line);
+    }
+  }
+
+  return { docTitle, introLines, sections };
+}
+
+async function loadSatzung(silent = false) {
+  if (!silent) {
+    state.satzungLoading = true;
+    state.satzungError = null;
+    render();
+  }
+  try {
+    const res = await fetch("/api/satzung", { cache: "no-store" });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(json.error || "Satzung konnte nicht geladen werden.");
+    }
+    state.satzungMarkdown = json.markdown || "";
+    state.satzungUpdatedAt = json.updatedAt || null;
+    state.satzungError = null;
+  } catch (err) {
+    state.satzungError = err.message;
+  } finally {
+    state.satzungLoading = false;
+    render();
+  }
+}
+
+function renderSatzungTab() {
+  if (state.satzungMarkdown === null && !state.satzungLoading && !state.satzungError) {
+    loadSatzung(true);
+    return `<div class="card" style="padding:28px;text-align:center;color:var(--muted)">Schiedsrichtersatzung wird geladen …</div>`;
+  }
+
+  if (state.satzungLoading && state.satzungMarkdown === null) {
+    return `<div class="card" style="padding:28px;text-align:center;color:var(--muted)">Schiedsrichtersatzung wird geladen …</div>`;
+  }
+
+  if (state.satzungError && state.satzungMarkdown === null) {
+    return `
+      <div class="alert alert-danger">
+        ${esc(state.satzungError)}
+        <div style="margin-top:8px">
+          <button class="btn btn-outline btn-sm" onclick="loadSatzung()">Erneut versuchen</button>
+        </div>
+      </div>
+    `;
+  }
+
+  const { docTitle, introLines, sections } = parseSatzungDocument(state.satzungMarkdown || "");
+  const q = (state.satzungSearch || "").trim().toLowerCase();
+
+  const filteredSections = q
+    ? sections.filter(
+        (sec) =>
+          sec.fullHeading.toLowerCase().includes(q) ||
+          sec.lines.join("\n").toLowerCase().includes(q)
+      )
+    : sections;
+
+  const introHtml = renderMarkdownBlocksHtml(introLines, state.satzungSearch);
+  const updatedStr = state.satzungUpdatedAt
+    ? new Date(state.satzungUpdatedAt).toLocaleDateString("de-DE", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      })
+    : null;
+
+  return `
+    <div class="bylaw-page">
+      <header class="bylaw-hero">
+        <div class="bylaw-hero-top">
+          <span class="bylaw-kicker">📜 Verbindliches Regelwerk</span>
+          ${updatedStr ? `<span class="bylaw-meta">Stand der Datei: ${esc(updatedStr)}</span>` : ""}
+        </div>
+        <h2 class="bylaw-doc-title">${esc(docTitle)}</h2>
+        <div class="bylaw-search-row">
+          <input
+            id="satzung-search-input"
+            type="search"
+            class="bylaw-search-input"
+            placeholder="In der Satzung suchen (z. B. 48 Stunden, 15,00 Euro, Kader, Härtefall …)"
+            value="${esc(state.satzungSearch)}"
+            oninput="setSatzungSearch(this.value, this.selectionStart)"
+            aria-label="In der Satzung suchen"
+          />
+          ${
+            state.satzungSearch
+              ? `<button type="button" class="btn btn-outline btn-sm bylaw-clear-btn" onclick="setSatzungSearch('')">Zurücksetzen</button>`
+              : ""
+          }
+        </div>
+      </header>
+
+      ${
+        sections.length > 0
+          ? `
+            <nav class="bylaw-mobile-pills" aria-label="Paragraphen-Schnellwahl">
+              ${filteredSections
+                .map(
+                  (sec) => `
+                    <button type="button" class="bylaw-jump-pill" onclick="scrollToBylawSection('${sec.id}')">
+                      ${esc(sec.badge || sec.title)}
+                    </button>
+                  `
+                )
+                .join("")}
+            </nav>
+          `
+          : ""
+      }
+
+      <div class="bylaw-layout">
+        ${
+          sections.length > 0
+            ? `
+              <aside class="bylaw-toc-card" aria-label="Inhaltsverzeichnis">
+                <div class="bylaw-toc-heading">Inhaltsverzeichnis</div>
+                <nav class="bylaw-toc-list">
+                  ${filteredSections
+                    .map(
+                      (sec) => `
+                        <button type="button" class="bylaw-toc-link" onclick="scrollToBylawSection('${sec.id}')">
+                          ${sec.badge ? `<span class="bylaw-toc-badge">${esc(sec.badge)}</span>` : ""}
+                          <span class="bylaw-toc-title">${esc(sec.title)}</span>
+                        </button>
+                      `
+                    )
+                    .join("")}
+                </nav>
+              </aside>
+            `
+            : ""
+        }
+
+        <div class="bylaw-content-col">
+          ${
+            introHtml && !q
+              ? `<section class="card bylaw-section-card">${introHtml}</section>`
+              : ""
+          }
+          ${
+            filteredSections.length === 0
+              ? `<div class="card" style="padding:28px;text-align:center;color:var(--muted)">Keine Paragraphen für „${esc(state.satzungSearch)}“ gefunden.</div>`
+              : filteredSections
+                  .map(
+                    (sec) => `
+                      <section class="card bylaw-section-card" id="${sec.id}">
+                        <header class="bylaw-section-header">
+                          ${sec.badge ? `<span class="bylaw-section-badge">${esc(sec.badge)}</span>` : ""}
+                          <h3 class="bylaw-section-title">${renderInlineMarkdown(sec.title, state.satzungSearch)}</h3>
+                        </header>
+                        <div class="bylaw-section-body">
+                          ${renderMarkdownBlocksHtml(sec.lines, state.satzungSearch)}
+                        </div>
+                      </section>
+                    `
+                  )
+                  .join("")
+          }
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 function renderDocsTab() {
   const gameMap = new Map(state.data.games.map((g) => [g.id, g]));
   const chainMap = new Map();
@@ -2519,7 +2956,7 @@ function renderModal() {
               <label>Ziel-Status</label>
               <select id="ma-status">
                 <option value="ASSIGNED">Zugewiesen (unbestätigt)</option>
-                <option value="CONFIRMED">Bestätigt</option>
+                <option value="CONFIRMED">Ansetzung zugesagt (Termin bestätigt)</option>
               </select>
             </div>
             <div class="form-group">
@@ -3380,7 +3817,7 @@ function render() {
       )
       .join("") +
     `<option value="all" ${currentSeason?.id === "all" ? "selected" : ""}>🏆 Ewige Tabelle (Alle Saisons)</option>`;
-  if (!showAdminTabs && !["games", "calendar", "tasks", "chains", "stats"].includes(state.tab)) {
+  if (!showAdminTabs && !["games", "calendar", "tasks", "chains", "stats", "satzung"].includes(state.tab)) {
     state.tab = "games";
   }
 
@@ -3390,6 +3827,7 @@ function render() {
   else if (state.tab === "tasks") tabContent = renderTasksTab();
   else if (state.tab === "chains") tabContent = renderChainsTab();
   else if (state.tab === "stats") tabContent = renderStatsTab();
+  else if (state.tab === "satzung") tabContent = renderSatzungTab();
   else if (state.tab === "players" && showAdminTabs) tabContent = renderPlayersTab();
   else if (state.tab === "treasury" && showAdminTabs) tabContent = renderTreasuryTab();
   else if (state.tab === "docs" && showAdminTabs) tabContent = renderDocsTab();
@@ -3400,6 +3838,7 @@ function render() {
     tasks: "Meine Aufgaben",
     chains: "Weitergabeketten",
     stats: "Statistiken & Rangliste",
+    satzung: "Schiedsrichtersatzung",
     players: "Mannschaftsliste",
     treasury: "Kasse & Härtefälle",
     docs: "Dokumentation (§ 6)",
@@ -3539,6 +3978,10 @@ function render() {
             <span class="drawer-nav-icon">🏆</span>
             <span class="drawer-nav-text">Statistiken &amp; Rangliste</span>
           </button>
+          <button class="drawer-nav-item ${state.tab === "satzung" ? "active" : ""}" onclick="setTab('satzung')">
+            <span class="drawer-nav-icon">📜</span>
+            <span class="drawer-nav-text">Schiedsrichtersatzung</span>
+          </button>
 
           ${
             showAdminTabs
@@ -3589,7 +4032,7 @@ function render() {
         <span class="bottom-nav-icon">🏆</span>
         <span class="bottom-nav-label">Statistik</span>
       </button>
-      <button class="bottom-nav-item ${["players", "treasury", "chains", "docs"].includes(state.tab) ? "active" : ""}" onclick="openDrawer()">
+      <button class="bottom-nav-item ${["players", "treasury", "chains", "docs", "satzung"].includes(state.tab) ? "active" : ""}" onclick="openDrawer()">
         <span class="bottom-nav-icon">⋯</span>
         <span class="bottom-nav-label">Mehr</span>
       </button>
@@ -3909,8 +4352,34 @@ window.setTab = (t) => {
   if (typeof window.closeDrawer === "function") window.closeDrawer();
   state.tab = t;
   state.error = null;
+  if (t === "satzung") {
+    loadSatzung(true);
+  }
   render();
 };
+
+window.setSatzungSearch = (val, cursorPos) => {
+  state.satzungSearch = val;
+  render();
+  const el = document.getElementById("satzung-search-input");
+  if (el) {
+    el.focus();
+    if (typeof cursorPos === "number") {
+      try {
+        el.setSelectionRange(cursorPos, cursorPos);
+      } catch {}
+    }
+  }
+};
+
+window.scrollToBylawSection = (sectionId) => {
+  const el = document.getElementById(sectionId);
+  if (el) {
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+};
+
+window.loadSatzung = loadSatzung;
 
 window.setGameFilter = (f) => {
   state.gameFilter = f;

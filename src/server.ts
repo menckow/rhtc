@@ -187,6 +187,29 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 200, { ok: true });
       }
 
+      // --- SATZUNG (aus satzung_schiri.md) ---
+      if (method === "GET" && pathname === "/api/satzung") {
+        try {
+          const mdPath = path.join(PUBLIC_DIR, "../satzung_schiri.md");
+          const markdown = fs.readFileSync(mdPath, "utf8");
+          const stat = fs.statSync(mdPath);
+          return sendJson(
+            res,
+            200,
+            {
+              markdown,
+              updatedAt: stat.mtime.toISOString(),
+              sourceFile: "satzung_schiri.md",
+            },
+            { "Cache-Control": "no-store, max-age=0" }
+          );
+        } catch {
+          return sendJson(res, 404, {
+            error: "Die Datei satzung_schiri.md konnte nicht gelesen werden.",
+          });
+        }
+      }
+
       // --- DASHBOARD ---
       if (method === "GET" && pathname === "/api/dashboard") {
         const allSeasons = sqlite
