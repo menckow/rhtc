@@ -3371,10 +3371,12 @@ function render() {
     tasks: "Meine Aufgaben",
     chains: "Weitergabeketten",
     stats: "Statistiken & Rangliste",
-    players: "Schiedsrichterliste (§ 2)",
+    players: "Mannschaftsliste",
     treasury: "Kasse & Härtefälle",
     docs: "Dokumentation (§ 6)",
   };
+
+  const currentViewTitle = tabLabels[state.tab] || "Schiri-Ansetzungen";
 
   root.innerHTML = `
     ${renderInstallBannerHtml()}
@@ -3390,14 +3392,14 @@ function render() {
         </button>
         <div class="brand">
           <div class="brand-crest">${RHTC_CREST_SVG}</div>
-          <h1>Schiri-Ansetzungen</h1>
+          <h1>${currentViewTitle}</h1>
         </div>
       </div>
 
       <div class="topbar-right">
         <div class="header-current-view" onclick="openDrawer()" title="Bereich wechseln">
           <span class="view-tag">Bereich:</span>
-          <strong>${tabLabels[state.tab] || state.tab}</strong>
+          <strong>${currentViewTitle}</strong>
           <span class="view-caret">▾</span>
         </div>
 
