@@ -157,6 +157,7 @@ export async function GET(
       allUsersRaw.filter((u) => !u.is_active_in_list)
     );
 
+    const targetSeasonKey = isAllTime ? "all" : String(season.id);
     const [seasonGames, rawOverrides, rawStatsOverrides, treasuryIban, treasuryRecipient, treasuryPaypal] = await Promise.all([
       isAllTime ? repo.games.listAll() : repo.games.listBySeason(Number(season.id)),
       repo.settings.get("deployed_count_overrides"),
@@ -165,16 +166,31 @@ export async function GET(
       repo.settings.get("treasury_recipient"),
       repo.settings.get("treasury_paypal"),
     ]);
+
+    // Deployed overrides: unterstützt saisonspezifisch { [seasonId]: { [userId]: number } } mit Fallback auf flaches Format { [userId]: number }
     let deployedOverrides: Record<string, number> = {};
     if (rawOverrides) {
       try {
-        deployedOverrides = JSON.parse(rawOverrides);
+        const parsed = JSON.parse(rawOverrides);
+        if (parsed[targetSeasonKey] && typeof parsed[targetSeasonKey] === "object") {
+          deployedOverrides = parsed[targetSeasonKey];
+        } else if (!isAllTime) {
+          deployedOverrides = parsed;
+        }
       } catch {}
     }
+
+    // Stats overrides: unterstützt saisonspezifisch { [seasonId]: { [userId]: { earnedPayoutCents?: number, takeoverCount?: number, handoffCount?: number } } }
+    // mit Fallback auf flaches Format
     let statsOverrides: Record<string, { earnedPayoutCents?: number; takeoverCount?: number; handoffCount?: number }> = {};
     if (rawStatsOverrides) {
       try {
-        statsOverrides = JSON.parse(rawStatsOverrides);
+        const parsed = JSON.parse(rawStatsOverrides);
+        if (parsed[targetSeasonKey] && typeof parsed[targetSeasonKey] === "object") {
+          statsOverrides = parsed[targetSeasonKey];
+        } else if (!isAllTime) {
+          statsOverrides = parsed;
+        }
       } catch {}
     }
     const gameIds = seasonGames.map((g) => g.id);
@@ -1379,6 +1395,7 @@ export async function POST(
     }
     const playerId = Number(body.playerId);
     const offsetOpenFees = Boolean(body.offsetOpenFees); // Ob offene Gebühren verrechnet werden sollen
+    const seasonIdParam = body.seasonId; // Optional: Begrenzung auf eine Saison ("all" oder number)
 
     if (!playerId) {
       return NextResponse.json({ error: "Keine Spieler-ID angegeben." }, { status: 400 });
@@ -1390,7 +1407,15 @@ export async function POST(
 
     // 1. Finde alle berechtigten, noch nicht ausgezahlten Töpfe des Spielers
     // (CONFIRMED_DEPLOYED, payout_settled != 1, payout_pool_cents > 0)
-    const allChains = await repo.chains.listAll();
+    let candidateGames: GameRow[] = [];
+    if (seasonIdParam && seasonIdParam !== "all") {
+      candidateGames = await repo.games.listBySeason(Number(seasonIdParam));
+    } else {
+      candidateGames = await repo.games.listAll();
+    }
+    const candidateGameIds = new Set(candidateGames.map((g) => g.id));
+
+    const allChains = candidateGameIds.size > 0 ? await repo.chains.listByGameIds(Array.from(candidateGameIds)) : [];
     const readyChains = allChains.filter(
       (c) =>
         c.current_assignee_id === playerId &&
@@ -1404,8 +1429,8 @@ export async function POST(
       0
     );
 
-    // 2. Finde alle offenen Weitergabe-Gebühren des Spielers
-    const allEvents = await repo.events.listAll();
+    // 2. Finde alle offenen Weitergabe-Gebühren des Spielers (innerhalb der Saison-Spiele)
+    const allEvents = candidateGameIds.size > 0 ? await repo.events.listByGameIds(Array.from(candidateGameIds)) : [];
     const openFeeEvents = allEvents
       .filter((e) => e.from_user_id === playerId && e.payment_status === "OPEN")
       .sort((a, b) => a.id - b.id); // Älteste zuerst
@@ -1671,22 +1696,46 @@ export async function PATCH(
       updates.password_hash = hashPassword(String(body.password).trim());
     }
 
+    // Ermittle Ziel-Saison für Overrides (aus body.seasonId oder aktuell aktiver Saison)
+    let overrideSeasonId: string = "active";
+    if (body.seasonId !== undefined && body.seasonId !== null) {
+      overrideSeasonId = String(body.seasonId);
+    } else {
+      const activeSeasonObj = await repo.seasons.getActive();
+      if (activeSeasonObj) overrideSeasonId = String(activeSeasonObj.id);
+    }
+
     const deployedVal = body.deployedCount !== undefined ? body.deployedCount : body.deployed_count;
     if (deployedVal !== undefined && (user.role === "SCHIEDSRICHTERWART" || user.role === "ADMIN")) {
       const rawOverrides = await repo.settings.get("deployed_count_overrides");
-      let overrides: Record<string, number> = {};
+      let overridesData: Record<string, any> = {};
       if (rawOverrides) {
         try {
-          overrides = JSON.parse(rawOverrides);
+          overridesData = JSON.parse(rawOverrides);
         } catch {}
       }
-      if (deployedVal === null || deployedVal === "") {
-        delete overrides[String(targetId)];
-        delete overrides[targetId];
+
+      // Falls overridesData noch ein flaches Objekt ist, migriere bzw. ordne der Saison zu
+      let seasonOverrides: Record<string, number> = {};
+      if (overridesData[overrideSeasonId] && typeof overridesData[overrideSeasonId] === "object") {
+        seasonOverrides = overridesData[overrideSeasonId];
       } else {
-        overrides[String(targetId)] = Math.max(0, parseInt(String(deployedVal), 10) || 0);
+        // Prüfe ob overridesData flach ist (enthält userId Keys)
+        const isFlat = Object.keys(overridesData).some((k) => typeof overridesData[k] === "number");
+        if (isFlat) {
+          seasonOverrides = { ...overridesData };
+        }
       }
-      await repo.settings.set("deployed_count_overrides", JSON.stringify(overrides));
+
+      if (deployedVal === null || deployedVal === "") {
+        delete seasonOverrides[String(targetId)];
+        delete seasonOverrides[targetId];
+      } else {
+        seasonOverrides[String(targetId)] = Math.max(0, parseInt(String(deployedVal), 10) || 0);
+      }
+
+      overridesData[overrideSeasonId] = seasonOverrides;
+      await repo.settings.set("deployed_count_overrides", JSON.stringify(overridesData));
     }
 
     // Zusätzliche Statistik-Korrekturen (Topf-Prämie, Gerettet/Übernahmen, Weitergegeben)
@@ -1699,15 +1748,25 @@ export async function PATCH(
       (user.role === "SCHIEDSRICHTERWART" || user.role === "ADMIN")
     ) {
       const rawStatsOverrides = await repo.settings.get("player_stats_overrides");
-      let statsOverrides: Record<string, { earnedPayoutCents?: number; takeoverCount?: number; handoffCount?: number }> = {};
+      let allStatsData: Record<string, any> = {};
       if (rawStatsOverrides) {
         try {
-          statsOverrides = JSON.parse(rawStatsOverrides);
+          allStatsData = JSON.parse(rawStatsOverrides);
         } catch {}
       }
 
+      let seasonStatsOverrides: Record<string, { earnedPayoutCents?: number; takeoverCount?: number; handoffCount?: number }> = {};
+      if (allStatsData[overrideSeasonId] && typeof allStatsData[overrideSeasonId] === "object") {
+        seasonStatsOverrides = allStatsData[overrideSeasonId];
+      } else {
+        const isFlat = Object.keys(allStatsData).some((k) => allStatsData[k] && (allStatsData[k].earnedPayoutCents !== undefined || allStatsData[k].takeoverCount !== undefined || allStatsData[k].handoffCount !== undefined));
+        if (isFlat) {
+          seasonStatsOverrides = { ...allStatsData };
+        }
+      }
+
       const pKey = String(targetId);
-      const current = statsOverrides[pKey] || {};
+      const current = seasonStatsOverrides[pKey] || {};
 
       if (earnedVal !== undefined) {
         if (earnedVal === null || earnedVal === "") {
@@ -1734,12 +1793,13 @@ export async function PATCH(
       }
 
       if (Object.keys(current).length === 0) {
-        delete statsOverrides[pKey];
+        delete seasonStatsOverrides[pKey];
       } else {
-        statsOverrides[pKey] = current;
+        seasonStatsOverrides[pKey] = current;
       }
 
-      await repo.settings.set("player_stats_overrides", JSON.stringify(statsOverrides));
+      allStatsData[overrideSeasonId] = seasonStatsOverrides;
+      await repo.settings.set("player_stats_overrides", JSON.stringify(allStatsData));
     }
 
     await repo.users.update(targetId, updates);

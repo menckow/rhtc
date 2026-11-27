@@ -1004,6 +1004,43 @@ th { font-size: 0.76rem; color: var(--muted); text-transform: uppercase; letter-
   flex-shrink: 0;
 }
 
+/* Topbar Season Switcher */
+.topbar-season-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(212, 160, 23, 0.35);
+  border-radius: 8px;
+  padding: 5px 10px;
+  transition: all 0.15s ease;
+}
+.topbar-season-wrap:hover,
+.topbar-season-wrap:focus-within {
+  background: rgba(212, 160, 23, 0.12);
+  border-color: rgba(212, 160, 23, 0.6);
+}
+.topbar-season-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--gold);
+  white-space: nowrap;
+}
+.topbar-season-select {
+  background: transparent;
+  color: #ffffff;
+  border: none;
+  font-size: 0.84rem;
+  font-weight: 600;
+  cursor: pointer;
+  outline: none;
+  padding: 1px 2px;
+}
+.topbar-season-select option {
+  background: #1a1a1a;
+  color: #ffffff;
+}
+
 /* Header Current View Badge */
 .header-current-view {
   display: inline-flex;
@@ -1332,6 +1369,19 @@ th { font-size: 0.76rem; color: var(--muted); text-transform: uppercase; letter-
   }
   .header-current-view {
     display: none !important;
+  }
+  .topbar-season-label {
+    display: none;
+  }
+  .topbar-season-wrap {
+    padding: 3px 6px;
+    max-width: 140px;
+  }
+  .topbar-season-select {
+    font-size: 0.76rem;
+    max-width: 125px;
+    text-overflow: ellipsis;
+    overflow: hidden;
   }
   .header-user-name,
   .header-user-btn .badge {

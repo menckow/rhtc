@@ -121,13 +121,13 @@ async function api(url, options = {}) {
 
 async function loadDashboard() {
   try {
-    const qs = state.selectedSeasonId
+    const qs = state.selectedSeasonId !== null && state.selectedSeasonId !== undefined
       ? `?seasonId=${state.selectedSeasonId}`
       : "";
     const data = await api(`/api/dashboard${qs}`);
     state.user = data.user;
     state.data = data;
-    if (state.data?.season) {
+    if (state.data?.season && state.selectedSeasonId === null) {
       state.selectedSeasonId = state.data.season.id;
     }
     state.error = null;
@@ -3397,6 +3397,13 @@ function render() {
       </div>
 
       <div class="topbar-right">
+        <div class="topbar-season-wrap" title="Saison auswählen">
+          <span class="topbar-season-label">Saison:</span>
+          <select class="topbar-season-select" onchange="changeSeason(this.value)" aria-label="Saison auswählen">
+            ${seasonOpts}
+          </select>
+        </div>
+
         <div class="header-current-view" onclick="openDrawer()" title="Bereich wechseln">
           <span class="view-tag">Bereich:</span>
           <strong>${currentViewTitle}</strong>
@@ -4420,6 +4427,7 @@ window.executeSettlePlayer = async (playerId) => {
       body: JSON.stringify({
         playerId,
         offsetOpenFees,
+        seasonId: state.selectedSeasonId || state.data?.season?.id,
       }),
     });
     state.modal = null;
@@ -4965,22 +4973,33 @@ window.saveStatsOverrides = async function (playerId) {
   const hanVal = hanEl ? hanEl.value.trim() : null;
 
   try {
+    const payload = {
+      seasonId: state.selectedSeasonId || state.data?.season?.id,
+    };
+    if (depVal !== null && depVal !== "") {
+      payload.deployedCount = Math.max(0, parseInt(depVal, 10) || 0);
+    } else if (depVal === "") {
+      payload.deployedCount = null;
+    }
+    if (earVal !== null && earVal !== "") {
+      payload.earnedPayoutCents = Math.max(0, Math.round(parseFloat(earVal.replace(",", ".")) * 100) || 0);
+    } else if (earVal === "") {
+      payload.earnedPayoutCents = null;
+    }
+    if (takVal !== null && takVal !== "") {
+      payload.takeoverCount = Math.max(0, parseInt(takVal, 10) || 0);
+    } else if (takVal === "") {
+      payload.takeoverCount = null;
+    }
+    if (hanVal !== null && hanVal !== "") {
+      payload.handoffCount = Math.max(0, parseInt(hanVal, 10) || 0);
+    } else if (hanVal === "") {
+      payload.handoffCount = null;
+    }
+
     await api(`/api/users/${playerId}`, {
       method: "PATCH",
-      body: JSON.stringify({
-        ...(depVal !== null && depVal !== ""
-          ? { deployedCount: Math.max(0, parseInt(depVal, 10) || 0) }
-          : {}),
-        ...(earVal !== null && earVal !== ""
-          ? { earnedPayoutCents: Math.max(0, Math.round(parseFloat(earVal.replace(",", ".")) * 100) || 0) }
-          : {}),
-        ...(takVal !== null && takVal !== ""
-          ? { takeoverCount: Math.max(0, parseInt(takVal, 10) || 0) }
-          : {}),
-        ...(hanVal !== null && hanVal !== ""
-          ? { handoffCount: Math.max(0, parseInt(hanVal, 10) || 0) }
-          : {}),
-      }),
+      body: JSON.stringify(payload),
     });
     // Aktualisiere modal player falls noch offen
     if (state.modal?.player?.id === playerId) {
