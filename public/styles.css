@@ -1850,6 +1850,9 @@ th { font-size: 0.76rem; color: var(--muted); text-transform: uppercase; letter-
   transition: background 0.15s ease;
   white-space: nowrap;
 }
+.slot-primary-btn.slot-single-btn {
+  border-radius: 8px;
+}
 .slot-primary-btn:hover {
   background: rgba(255, 255, 255, 0.12);
 }

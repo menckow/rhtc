@@ -507,6 +507,33 @@ function renderGamesTab() {
       // Pot total
       const totalPot = game.chains.reduce((acc, c) => acc + (c.payout_pool_cents || 0), 0);
 
+      // Eigener aktiver Slot des angemeldeten Nutzers in diesem Spiel
+      const myGameChain = game.chains.find(
+        (c) =>
+          (c.pending_assignee_id ?? c.current_assignee_id) === state.user.id &&
+          c.status !== "CONFIRMED_DEPLOYED" &&
+          c.status !== "REPORTED_DEPLOYED"
+      );
+
+      const gameMenuPlayItems = [];
+      if (myGameChain) {
+        gameMenuPlayItems.push(
+          `<button class="menu-item" onclick="downloadGameIcs(${myGameChain.id})">📅 In Kalender eintragen (.ics)</button>`
+        );
+      }
+      if (isWart || myGameChain) {
+        gameMenuPlayItems.push(
+          `<button class="menu-item" onclick="copyGameWhatsAppInfo(${game.id})">💬 Spiel-Info für WhatsApp kopieren</button>`
+        );
+      }
+      if (isWart) {
+        gameMenuPlayItems.push(
+          `<button class="menu-item" onclick="openUrgentBroadcastModal(${game.id})" style="color:var(--danger);font-weight:600">🚨 Dringenden Übernahme-Aufruf teilen</button>`
+        );
+      }
+
+      const showGameMenu = gameMenuPlayItems.length > 0 || isWart;
+
       html += `
         <div class="game-card">
           <div class="game-date-badge">
@@ -522,24 +549,31 @@ function renderGamesTab() {
                 <span class="game-time">${timeStr}</span>
                 <span class="game-location">📍 ${esc(game.location || "RHTC")}</span>
               </div>
-              <div class="game-options-wrap">
-                <button class="game-options-btn" onclick="toggleGameMenu(event, ${game.id})" title="Optionen">···</button>
-                <div class="slot-dropdown-menu" id="game-menu-${game.id}">
-                  <div class="menu-section-header">SPIEL</div>
-                  <button class="menu-item" onclick="downloadGameIcs(${game.chains[0]?.id || 0})">📅 In Kalender eintragen (.ics)</button>
-                  <button class="menu-item" onclick="copyGameWhatsAppInfo(${game.id})">💬 Spiel-Info für WhatsApp kopieren</button>
-                  <button class="menu-item" onclick="openUrgentBroadcastModal(${game.id})" style="color:var(--danger);font-weight:600">🚨 Dringenden Übernahme-Aufruf teilen</button>
-                  ${
-                    isWart
-                      ? `
-                        <div class="menu-section-header">ADMIN</div>
-                        <button class="menu-item" onclick="openEditGameModal(${game.id})">✏️ Spiel bearbeiten</button>
-                        <button class="menu-item text-danger" onclick="deleteGame(${game.id}, '${esc(game.title)}')">🗑️ Spiel löschen</button>
-                      `
-                      : ""
-                  }
-                </div>
-              </div>
+              ${
+                showGameMenu
+                  ? `
+                    <div class="game-options-wrap">
+                      <button class="game-options-btn" onclick="toggleGameMenu(event, ${game.id})" title="Optionen">···</button>
+                      <div class="slot-dropdown-menu" id="game-menu-${game.id}">
+                        ${
+                          gameMenuPlayItems.length > 0
+                            ? `<div class="menu-section-header">SPIEL</div>${gameMenuPlayItems.join("")}`
+                            : ""
+                        }
+                        ${
+                          isWart
+                            ? `
+                              <div class="menu-section-header">ADMIN</div>
+                              <button class="menu-item" onclick="openEditGameModal(${game.id})">✏️ Spiel bearbeiten</button>
+                              <button class="menu-item text-danger" onclick="deleteGame(${game.id}, '${esc(game.title)}')">🗑️ Spiel löschen</button>
+                            `
+                            : ""
+                        }
+                      </div>
+                    </div>
+                  `
+                  : ""
+              }
             </div>
 
             <div class="game-subtitle-row">
@@ -573,48 +607,32 @@ function renderGamesTab() {
           statusPill = `<span class="slot-status-pill status-unconfirmed" title="Wartet noch auf Annahme durch den angesetzten Schiedsrichter"><span class="status-dot" aria-hidden="true"></span> Unbestätigt</span>`;
         }
 
-        // Primary action determination
-        let primaryClick = "";
-        let primaryText = "";
-        if ((isResponsible || isWart) && ch.status === "VOLUNTARY_REQUESTED") {
-          primaryClick = `decideVolunteer(${ch.id}, 'APPROVE')`;
-          primaryText = "Übernahme bestätigen";
-        } else if (ch.status === "VOLUNTARY_REQUESTED" && ch.voluntary_requester_id === state.user.id) {
-          primaryClick = `toggleSlotDropdown(event, ${ch.id})`;
-          primaryText = "Angefragt (Warten)";
-        } else if ((isResponsible || isWart) && isUnconfirmed) {
-          primaryClick = `respondHandoff(${ch.id}, 'ACCEPT')`;
-          primaryText = "Annehmen";
-        } else if ((isResponsible || isWart) && ch.status === "CONFIRMED") {
-          primaryClick = `handoffById(${ch.id})`;
-          primaryText = "Weiterleiten";
-        } else if (isWart && ch.status === "REPORTED_DEPLOYED") {
-          primaryClick = `confirmDeployed(${ch.id})`;
-          primaryText = "Einsatz bestätigen";
-        } else if (canVolunteerForChain(ch)) {
-          primaryClick = `requestVolunteer(${ch.id})`;
-          primaryText = ch.payout_pool_cents > 0 ? `Übernehmen (+${formatEuro(ch.payout_pool_cents)})` : "Übernehmen";
-        } else if (!assignee && isWart) {
-          primaryClick = `openManualAssignModal(${ch.id})`;
-          primaryText = "Zuweisen";
-        } else {
-          primaryClick = `toggleSlotDropdown(event, ${ch.id})`;
-          primaryText = "Aktionen";
-        }
+        const isCompletedSlot =
+          ch.status === "CONFIRMED_DEPLOYED" || ch.status === "REPORTED_DEPLOYED";
+        const isKickoffReached = new Date(game.kickoff_at).getTime() <= Date.now();
+        const canReportDeployed =
+          (isResponsible || isWart) &&
+          Boolean(assignee) &&
+          !isCompletedSlot &&
+          (isKickoffReached || isWart);
 
         // Aktionen für Dropdown-Menü vorbereiten
         const ansetzungItems = [];
         if ((isResponsible || isWart) && isUnconfirmed) {
           ansetzungItems.push(`<button class="menu-item" onclick="respondHandoff(${ch.id}, 'ACCEPT')">Annehmen (bestätigen)</button>`);
         }
-        if (isResponsible || isWart) {
+        if ((isResponsible || isWart) && assignee && !isCompletedSlot) {
           ansetzungItems.push(`<button class="menu-item" onclick="handoffById(${ch.id})">Weiterleiten ...</button>`);
         }
-        ansetzungItems.push(`<button class="menu-item" onclick="downloadGameIcs(${ch.id})">In Kalender eintragen</button>`);
-        if (assignee) {
+        // "In Kalender eintragen" nur für eigene Spiele, die man selbst pfeift
+        if (isResponsible && !isCompletedSlot) {
+          ansetzungItems.push(`<button class="menu-item" onclick="downloadGameIcs(${ch.id})">📅 In Kalender eintragen</button>`);
+        }
+        // "Schiri-Erinnerung senden" & "Rückbestätigung anfordern" nur für Schiedsrichterwart und Admin
+        if (isWart && assignee && !isCompletedSlot) {
           ansetzungItems.push(`<button class="menu-item" onclick="openGameReminderModal(${game.id}, ${ch.id})">💬 Schiri-Erinnerung senden</button>`);
         }
-        if (assignee && isUnconfirmed) {
+        if (isWart && assignee && isUnconfirmed) {
           ansetzungItems.push(`<button class="menu-item" onclick="openConfirmationReminderModal(${game.id}, ${ch.id})" style="color:var(--warn)">⏰ Rückbestätigung anfordern</button>`);
         }
         if (canVolunteerForChain(ch)) {
@@ -629,13 +647,49 @@ function renderGamesTab() {
         if (isWart && (ch.status === "REPORTED_DEPLOYED" || ch.status === "CONFIRMED" || ch.status === "ASSIGNED")) {
           nachDemSpielItems.push(`<button class="menu-item" onclick="confirmDeployed(${ch.id})">Einsatz bestätigen (§ 6.1)</button>`);
         }
-        if ((isResponsible || isWart) && (new Date(game.kickoff_at).getTime() <= Date.now() || isWart)) {
+        if (canReportDeployed) {
           nachDemSpielItems.push(`<button class="menu-item" onclick="reportDeployed(${ch.id})">Als gepfiffen melden (§ 6.2)</button>`);
         }
 
         const adminItems = [];
         if (isWart && ch.status !== "CONFIRMED_DEPLOYED") {
           adminItems.push(`<button class="menu-item" onclick="openManualAssignModal(${ch.id})">Manuell zuweisen ...</button>`);
+        }
+
+        const totalMenuItems =
+          ansetzungItems.length + nachDemSpielItems.length + adminItems.length;
+
+        // Primary action determination (nur wenn tatsächlich eine Aktion möglich ist)
+        let primaryClick = "";
+        let primaryText = "";
+        let hasDirectPrimary = true;
+        if ((isResponsible || isWart) && ch.status === "VOLUNTARY_REQUESTED") {
+          primaryClick = `decideVolunteer(${ch.id}, 'APPROVE')`;
+          primaryText = "Übernahme bestätigen";
+        } else if ((isResponsible || isWart) && isUnconfirmed) {
+          primaryClick = `respondHandoff(${ch.id}, 'ACCEPT')`;
+          primaryText = "Annehmen";
+        } else if (isResponsible && ch.status === "CONFIRMED" && isKickoffReached) {
+          primaryClick = `reportDeployed(${ch.id})`;
+          primaryText = "Als gepfiffen melden";
+        } else if ((isResponsible || isWart) && ch.status === "CONFIRMED") {
+          primaryClick = `handoffById(${ch.id})`;
+          primaryText = "Weiterleiten";
+        } else if (isWart && ch.status === "REPORTED_DEPLOYED") {
+          primaryClick = `confirmDeployed(${ch.id})`;
+          primaryText = "Einsatz bestätigen";
+        } else if (canVolunteerForChain(ch)) {
+          primaryClick = `requestVolunteer(${ch.id})`;
+          primaryText = ch.payout_pool_cents > 0 ? `Übernehmen (+${formatEuro(ch.payout_pool_cents)})` : "Übernehmen";
+        } else if (!assignee && isWart) {
+          primaryClick = `openManualAssignModal(${ch.id})`;
+          primaryText = "Zuweisen";
+        } else if (totalMenuItems > 0) {
+          hasDirectPrimary = false;
+          primaryClick = `toggleSlotDropdown(event, ${ch.id})`;
+          primaryText = "Aktionen";
+        } else {
+          hasDirectPrimary = false;
         }
 
         let dropdownContent = "";
@@ -649,6 +703,10 @@ function renderGamesTab() {
           dropdownContent += `<div class="menu-section-header">ADMIN</div>${adminItems.join("")}`;
         }
 
+        const showSlotActionButton = hasDirectPrimary || totalMenuItems > 0;
+        const showSlotDropdown =
+          totalMenuItems > 1 || (!hasDirectPrimary && totalMenuItems === 1);
+
         html += `
           <div class="ref-slot-card ${ch.payout_pool_cents > 0 ? "has-pot" : ""}">
             <div class="ref-slot-info">
@@ -661,13 +719,25 @@ function renderGamesTab() {
               ${ch.voluntaryRequester ? `<div style="font-size:0.75rem;color:var(--warn);margin-top:2px">Übernahme durch ${esc(fullName(ch.voluntaryRequester))} angefragt</div>` : ""}
             </div>
 
-            <div class="slot-split-btn-group">
-              <button class="slot-primary-btn" onclick="${primaryClick}">${primaryText}</button>
-              <button class="slot-dropdown-toggle" onclick="toggleSlotDropdown(event, ${ch.id})" title="Weitere Aktionen">▾</button>
-              <div class="slot-dropdown-menu" id="slot-menu-${ch.id}">
-                ${dropdownContent}
-              </div>
-            </div>
+            ${
+              showSlotActionButton
+                ? `
+                  <div class="slot-split-btn-group">
+                    <button class="slot-primary-btn ${showSlotDropdown ? "" : "slot-single-btn"}" onclick="${primaryClick}">${primaryText}</button>
+                    ${
+                      showSlotDropdown
+                        ? `
+                          <button class="slot-dropdown-toggle" onclick="toggleSlotDropdown(event, ${ch.id})" title="Weitere Aktionen">▾</button>
+                          <div class="slot-dropdown-menu" id="slot-menu-${ch.id}">
+                            ${dropdownContent}
+                          </div>
+                        `
+                        : ""
+                    }
+                  </div>
+                `
+                : ""
+            }
           </div>
         `;
       }
@@ -5026,8 +5096,9 @@ window.openWhatsAppWithReminder = (phoneClean) => {
   window.open(url, "_blank", "noopener,noreferrer");
 };
 
-// 1. Spieltags-Erinnerung für Schiri
+// 1. Spieltags-Erinnerung für Schiri (nur Schiedsrichterwart & Admin)
 window.openGameReminderModal = (gameId, chainId) => {
+  if (state.user?.role !== "SCHIEDSRICHTERWART" && state.user?.role !== "ADMIN") return;
   const g = state.data?.games?.find((game) => game.id === Number(gameId));
   if (!g) return;
   const ch = g.chains.find((c) => c.id === Number(chainId));
