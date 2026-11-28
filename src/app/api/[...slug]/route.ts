@@ -205,8 +205,23 @@ export async function GET(
       });
     }
 
+    const sanitizeUserForViewer = (u: UserRow | SafeUser): SafeUser => {
+      const { password_hash: _, ...safe } = u as UserRow;
+      if (safe.id === user.id) return safe;
+      const canSeeBankForPayout = user.role === "KASSENWART";
+      const canSeePhoneForReminders =
+        user.role === "SCHIEDSRICHTERWART" || user.role === "KASSENWART";
+      return {
+        ...safe,
+        email: "",
+        mobile_number: canSeePhoneForReminders ? safe.mobile_number : null,
+        iban: canSeeBankForPayout ? safe.iban : null,
+        paypal: canSeeBankForPayout ? safe.paypal : null,
+      };
+    };
+
     const userMap = new Map<number, SafeUser>(
-      allUsersRaw.map(({ password_hash: _, ...u }) => [u.id, u])
+      allUsersRaw.map((u) => [u.id, sanitizeUserForViewer(u)])
     );
     const sortedActive = sortPlayersList(
       allUsersRaw.filter((u) => u.is_active_in_list)
@@ -361,8 +376,9 @@ export async function GET(
       const takeoverCount = hasTakeoverOverride ? Number(pStatsOv.takeoverCount) : calculatedTakeoverCount;
       const handoffCount = hasHandoffOverride ? Number(pStatsOv.handoffCount) : calculatedHandoffCount;
 
+      const safePlayer = sanitizeUserForViewer(p);
       return {
-        ...p,
+        ...safePlayer,
         activeAssigned,
         deployedCount,
         isDeployedOverridden: hasOverride,

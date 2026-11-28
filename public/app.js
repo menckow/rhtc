@@ -1159,7 +1159,8 @@ function renderTasksTab() {
     html += `<table class="responsive-table"><thead><tr><th>ID</th><th>Spiel</th><th>Termin</th><th>Slot</th><th>Status</th><th>Topf</th><th style="text-align:right">Kalender</th></tr></thead><tbody>`;
     for (const { g, ch } of myAssignments) {
       html += `<tr>
-        <td class="cell-main"><strong>${esc(g.title)}</strong> <span class="badge badge-gray">${esc(ch.ref_code || "–")}</span></td>
+        <td data-label="ID"><span class="badge badge-gray">${esc(ch.ref_code || "–")}</span></td>
+        <td class="cell-main" data-label="Spiel"><strong>${esc(g.title)}</strong></td>
         <td data-label="Termin">${formatDate(g.kickoff_at)}</td>
         <td data-label="Slot">Slot ${ch.slot_number}</td>
         <td data-label="Status">${statusBadge(ch.status)}</td>
@@ -1191,7 +1192,7 @@ function renderPlayersTab() {
 
   let html = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
-      <h2 style="margin:0;font-size:1.1rem">Mannschaftsliste (§ 2 &amp; § 7)</h2>
+      <h2 style="margin:0;font-size:1.1rem">Mannschaftsliste</h2>
       <div class="btn-row" style="margin:0">
         <button class="btn btn-outline" onclick="exportPlayersCsv()">CSV-Export</button>
         ${
@@ -1211,7 +1212,7 @@ function renderPlayersTab() {
           <tr>
             ${isWart ? `<th class="col-select" style="width:30px"><input type="checkbox" ${allSelected ? "checked" : ""} onchange="toggleSelectAllPlayers(this.checked)" title="Alle auswählen" /></th>` : ""}
             <th class="col-rank" style="width:38px">#</th>
-            <th class="col-player">Spieler &amp; Kontakt</th>
+            <th class="col-player">Spieler</th>
             <th class="col-status" style="width:125px">Status</th>
             <th class="col-deployed" style="width:220px">Einsätze</th>
             <th class="col-open" style="width:85px">Offen</th>
@@ -1223,9 +1224,8 @@ function renderPlayersTab() {
   state.data.players.forEach((p, idx) => {
     const isSelf = p.id === state.user.id;
     const isChecked = state.selectedPlayerIds.includes(p.id);
-    const hasExtraDetails = Boolean(p.mobile_number);
     html += `
-      <tr class="has-mobile-accordion" id="player-row-${p.id}">
+      <tr id="player-row-${p.id}">
         ${
           isWart
             ? `<td data-label="Auswahl" class="col-select"><input type="checkbox" ${isChecked ? "checked" : ""} ${isSelf ? "disabled title='Eigener Account'" : ""} onchange="toggleSelectPlayer(${p.id}, this.checked)" /></td>`
@@ -1233,7 +1233,7 @@ function renderPlayersTab() {
         }
         <td data-label="#" class="col-rank">${idx + 1}${p.list_order_override !== null && p.list_order_override !== undefined ? ` <span class="badge badge-gray" title="Manuelle Position (§ 2 Abs. 4)">#${p.list_order_override}</span>` : ""}</td>
         <td class="cell-main col-player">
-          <div>
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
             ${
               isWart
                 ? `<strong style="cursor:pointer;color:var(--primary);text-decoration:underline" onclick="openEditPlayerModal(${p.id})" title="Klicken zum Bearbeiten">${esc(p.last_name)}, ${esc(p.first_name)}</strong>`
@@ -1241,7 +1241,6 @@ function renderPlayersTab() {
             }
             <span class="badge badge-gray">${roleLabel(p.role)}</span>
           </div>
-          <div class="player-meta">${esc(p.email)}</div>
         </td>
         <td data-label="Status" class="col-status">
           <div class="player-badges">
@@ -1253,20 +1252,6 @@ function renderPlayersTab() {
           <strong>${p.deployedCount}</strong> eingesetzt${p.isDeployedOverridden ? ` <span class="badge badge-gray" style="font-size:0.7rem;vertical-align:middle" title="Manuell korrigiert">korr.</span>` : ""} / ${p.activeAssigned} anges.
         </td>
         <td data-label="Offen" class="col-open">${p.openPaymentCents > 0 ? `<strong style="color:var(--danger)">${formatEuro(p.openPaymentCents)}</strong>` : "0,00 €"}</td>
-        ${
-          hasExtraDetails
-            ? `
-              <td class="mobile-secondary" data-label="Kontakt" style="flex-direction:column;align-items:flex-start;text-align:left;background:#f8fafc;border-radius:6px;padding:8px 10px;margin-top:4px">
-                <div style="font-size:0.8rem">📞 ${esc(p.mobile_number)}</div>
-              </td>
-              <td style="padding:0;border:none">
-                <button type="button" class="mobile-accordion-toggle" onclick="toggleMobileAccordion('player-row-${p.id}', this)">
-                  <span>Details</span> <span class="acc-arrow">▾</span>
-                </button>
-              </td>
-            `
-            : ""
-        }
       </tr>
     `;
   });
@@ -1358,7 +1343,7 @@ function renderTreasuryTab() {
     </div>
 
     <!-- Neue Sektion: Spieler-Salden & Sammelabwicklung -->
-    <div class="card" style="overflow-x:auto;border-top:3px solid var(--primary);margin-top:16px">
+    <div class="card" role="region" tabindex="0" aria-label="Spieler-Salden und Sammelabwicklung" style="overflow-x:auto;border-top:3px solid var(--primary);margin-top:16px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px">
         <div>
           <h3 style="margin:0;font-size:1rem;display:flex;align-items:center;gap:6px">
@@ -1389,7 +1374,6 @@ function renderTreasuryTab() {
                 ${playerBalances
                   .map((b) => {
                     const isNetPlus = b.netBalanceCents > 0;
-                    const isNetZero = b.netBalanceCents === 0;
                     const isNetMinus = b.netBalanceCents < 0;
 
                     const saldoClass = isNetPlus ? "color:var(--success)" : isNetMinus ? "color:var(--danger)" : "color:var(--muted)";
@@ -1403,10 +1387,7 @@ function renderTreasuryTab() {
                       <tr class="has-mobile-accordion" id="balance-row-${b.player.id}">
                         <td class="cell-main" data-label="Spieler">
                           <strong>${esc(b.player.last_name)}, ${esc(b.player.first_name)}</strong>
-                          <div class="player-meta">${roleLabel(b.player.role)} &bull; ${esc(b.player.email)}</div>
-                        </td>
-                        <td data-label="Netto-Saldo">
-                          <strong style="${saldoClass};font-size:0.95rem">${saldoText}</strong>
+                          <div class="player-meta">${roleLabel(b.player.role)}</div>
                         </td>
                         <td data-label="Topf-Guthaben" class="mobile-secondary">
                           ${
@@ -1421,6 +1402,9 @@ function renderTreasuryTab() {
                               ? `<strong style="color:var(--danger)">${formatEuro(b.openFeeCents)}</strong> <span style="font-size:0.75rem;color:var(--muted)">(${b.openEvents.length}× offen)</span>`
                               : `<span style="color:var(--muted)">0,00 €</span>`
                           }
+                        </td>
+                        <td data-label="Netto-Saldo">
+                          <strong style="${saldoClass};font-size:0.95rem">${saldoText}</strong>
                         </td>
                         ${
                           isKassenwart
@@ -1453,7 +1437,7 @@ function renderTreasuryTab() {
       }
     </div>
 
-    <div class="card" style="overflow-x:auto">
+    <div class="card" role="region" tabindex="0" aria-label="Weitergabe-Zahlungen und Härtefallanträge" style="overflow-x:auto">
       <h3 style="margin-top:0;font-size:1rem">Weitergabe-Zahlungen &amp; Härtefallanträge</h3>
       ${
         paymentEvents.length === 0
@@ -1485,15 +1469,15 @@ function renderTreasuryTab() {
                           <strong>${esc(fullName(ev.fromUser))}</strong>
                           ${g ? `<div class="player-meta">${esc(g.title)}</div>` : ""}
                         </td>
+                        <td data-label="Datum" class="mobile-secondary">${formatDate(ev.created_at)}</td>
                         <td data-label="Betrag">
                           <strong>${formatEuro(totalFee)}</strong>
                           ${ev.waived_amount_cents > 0 ? `<div style="font-size:0.75rem;color:var(--muted)">(Erlass: ${formatEuro(ev.waived_amount_cents)})</div>` : ""}
                           ${ev.payment_status === "OPEN" && ev.credit_offset_cents > 0 ? `<div style="font-size:0.75rem;color:var(--muted)">(Verrechnet: ${formatEuro(ev.credit_offset_cents)} &bull; Offen: ${formatEuro(remainingOpen)})</div>` : ""}
                         </td>
-                        <td data-label="Status">${chainPaymentBadge(ev) || esc(ev.payment_status)}</td>
-                        <td data-label="Datum" class="mobile-secondary">${formatDate(ev.created_at)}</td>
+                        <td data-label="Status">${chainPaymentBadge(ev) || esc(paymentStatusLabel(ev.payment_status))}</td>
                         <td data-label="Härtefall (§ 8)" class="mobile-secondary">
-                          ${ev.hardship_status === "NONE" ? "–" : esc(ev.hardship_status)}
+                          ${esc(hardshipStatusLabel(ev.hardship_status))}
                           ${isKassenwart && ev.hardship_reason_confidential ? `<div style="font-size:0.78rem;color:var(--muted);margin-top:2px">Vertraulich: ${esc(ev.hardship_reason_confidential)}</div>` : ""}
                         </td>
                         ${
@@ -1521,7 +1505,7 @@ function renderTreasuryTab() {
       }
     </div>
 
-    <div class="card" style="overflow-x:auto">
+    <div class="card" role="region" tabindex="0" aria-label="Auszahlungstöpfe der Weitergabestränge" style="overflow-x:auto">
       <h3 style="margin-top:0;font-size:1rem">Auszahlungstöpfe der Weitergabestränge (§ 4 Abs. 3, § 5 Abs. 4)</h3>
       <p style="font-size:0.82rem;color:var(--muted);margin:-4px 0 12px 0">
         Die Auszahlung des Topfes erfolgt grundsätzlich erst an denjenigen Schiedsrichter, der das Spiel bestätigt übernommen und auch offiziell gepfiffen hat.
@@ -1542,7 +1526,7 @@ function renderTreasuryTab() {
                       if (isDeployed || isConfirmed) {
                         const ref = ch.currentAssignee;
                         const name = ref ? fullName(ref) : "–";
-                        actualRefHtml = `<strong>${esc(name)}</strong> ${isDeployed ? `<span class="badge badge-green" style="font-size:0.7rem">Gepfiffen</span>` : `<span class="badge badge-blue" style="font-size:0.7rem">Bestätigt</span>`}`;
+                        actualRefHtml = `<strong>${esc(name)}</strong> ${isDeployed ? `<span class="badge badge-green" style="font-size:0.7rem">Gepfiffen</span>` : `<span class="badge badge-blue" style="font-size:0.7rem">Zugesagt</span>`}`;
                       } else if (ch.status === "VOLUNTARY_REQUESTED") {
                         const vol = ch.voluntaryRequester;
                         const target = ch.pendingAssignee || ch.currentAssignee;
@@ -1561,9 +1545,9 @@ function renderTreasuryTab() {
                   <tr class="has-mobile-accordion" id="payout-row-${ch.id}">
                     <td data-label="ID"><span class="badge badge-gray">${esc(ch.ref_code || `SR-00${ch.slot_number}`)}</span></td>
                     <td class="cell-main" data-label="Spiel"><strong>${esc(g.title)}</strong><div class="player-meta">${formatDate(g.kickoff_at)} &bull; Slot ${ch.slot_number}</div></td>
-                    <td data-label="Betrag"><strong>${formatEuro(ch.payout_pool_cents)}</strong></td>
-                    <td data-label="Status">${statusBadge(ch.status)}</td>
                     <td data-label="Schiedsrichter" class="mobile-secondary">${actualRefHtml}</td>
+                    <td data-label="Status">${statusBadge(ch.status)}</td>
+                    <td data-label="Betrag"><strong>${formatEuro(ch.payout_pool_cents)}</strong></td>
                     <td data-label="Auszahlung" class="mobile-secondary">
                       ${
                         ch.payout_settled
@@ -2351,6 +2335,93 @@ function renderSatzungTab() {
   `;
 }
 
+function docEventInfo(ev) {
+  if (!ev) return { label: "Ereignis", cls: "badge-gray" };
+  if (ev.event_type === "INITIAL_ASSIGNMENT") return { label: "Start-Ansetzung", cls: "badge-gray" };
+  if (ev.event_type === "REGULAR_HANDOFF") {
+    if (ev.reason_type === "VOLUNTEER_EXEMPT") return { label: "Weitergabe (Ehrenamt § 7)", cls: "badge-blue" };
+    if (ev.reason_type === "HARDSHIP") return { label: "Weitergabe (Härtefall § 8)", cls: "badge-amber" };
+    return { label: "Reguläre Weitergabe", cls: "badge-amber" };
+  }
+  if (ev.event_type === "SQUAD_NOMINATION") return { label: "Kader-Nominierung (§ 3.5)", cls: "badge-blue" };
+  if (ev.event_type === "VOLUNTEER_EXEMPT") return { label: "Weitergabe (Ehrenamt § 7)", cls: "badge-blue" };
+  if (ev.event_type === "HARDSHIP") return { label: "Weitergabe (Härtefall § 8)", cls: "badge-amber" };
+  if (ev.event_type === "HANDOFF_ACCEPTED") return { label: "Ansetzung angenommen", cls: "badge-blue" };
+  if (ev.event_type === "HANDOFF_SKIPPED_UNAVAILABLE") return { label: "Übersprungen (abgemeldet)", cls: "badge-gray" };
+  if (ev.event_type === "VOLUNTEER_REQUEST") return { label: "Übernahme angefragt (§ 5)", cls: "badge-amber" };
+  if (ev.event_type === "VOLUNTEER_APPROVED") return { label: "Übernahme bestätigt (§ 5)", cls: "badge-blue" };
+  if (ev.event_type === "VOLUNTEER_REJECTED") return { label: "Übernahme abgelehnt", cls: "badge-gray" };
+  if (ev.event_type === "VOLUNTEER_AUTO_FORWARD") return { label: "Auto-Weitergabe (§ 5.5)", cls: "badge-blue" };
+  if (ev.event_type === "REPORTED_DEPLOYED") return { label: "Als gepfiffen gemeldet (§ 6.2)", cls: "badge-amber" };
+  if (ev.event_type === "CONFIRMED_DEPLOYED") return { label: "Einsatz bestätigt (§ 6.1)", cls: "badge-green" };
+  if (ev.event_type === "PAYOUT_SETTLED") return { label: "Topf ausgezahlt", cls: "badge-green" };
+  return { label: ev.event_type, cls: "badge-gray" };
+}
+
+function hardshipStatusLabel(status) {
+  const map = {
+    NONE: "–",
+    PENDING: "Prüfung offen",
+    APPROVED_FULL: "Vollständiger Erlass",
+    APPROVED_PARTIAL: "Teilverzicht",
+    REJECTED: "Abgelehnt",
+  };
+  return map[status] || status || "–";
+}
+
+function paymentStatusLabel(status) {
+  const map = {
+    PAID: "Bezahlt",
+    OPEN: "Zahlung offen",
+    WAIVED_FULL: "Erlassen",
+    WAIVED_PARTIAL: "Teilerlass",
+    NOT_APPLICABLE: "Entfällt",
+  };
+  return map[status] || status || "–";
+}
+
+function formatJackpotChainSub(ch) {
+  if (!ch) return "Status: Offen";
+  if (ch.status === "CONFIRMED_DEPLOYED" || ch.status === "REPORTED_DEPLOYED") {
+    return ch.currentAssignee
+      ? `Gepfiffen: ${ch.currentAssignee.last_name}, ${ch.currentAssignee.first_name}`
+      : "Gepfiffen";
+  }
+  if (ch.status === "VOLUNTARY_REQUESTED") {
+    const req = ch.voluntaryRequester;
+    return req
+      ? `Übernahme angefragt: ${req.last_name}, ${req.first_name}`
+      : "Übernahme angefragt";
+  }
+  if (ch.status === "PENDING_HANDOFF") {
+    const target = ch.pendingAssignee;
+    return target
+      ? `Weitergeleitet an: ${target.last_name}, ${target.first_name} (offen)`
+      : "Weiterleitung offen";
+  }
+  if (ch.status === "CONFIRMED") {
+    const ref = ch.currentAssignee;
+    return ref
+      ? `Angesetzt: ${ref.last_name}, ${ref.first_name}`
+      : "Angesetzt";
+  }
+  if (ch.status === "ASSIGNED") {
+    const ref = ch.pendingAssignee || ch.currentAssignee;
+    return ref
+      ? `Zugewiesen: ${ref.last_name}, ${ref.first_name} (unbestätigt)`
+      : "Zugewiesen (unbestätigt)";
+  }
+  return "Noch unbesetzt";
+}
+
+function getJackpotTargetPlayerId(ch) {
+  if (!ch) return null;
+  if (ch.status === "VOLUNTARY_REQUESTED" && ch.voluntary_requester_id) {
+    return ch.voluntary_requester_id;
+  }
+  return ch.pending_assignee_id ?? ch.current_assignee_id ?? null;
+}
+
 function renderDocsTab() {
   const gameMap = new Map(state.data.games.map((g) => [g.id, g]));
   const chainMap = new Map();
@@ -2359,8 +2430,8 @@ function renderDocsTab() {
   }
   return `
     <h2 style="margin-top:0;font-size:1.1rem">Dokumentations-Protokoll (§ 6 Abs. 1)</h2>
-    <div class="card" style="overflow-x:auto">
-      <table>
+    <div class="card" role="region" tabindex="0" aria-label="Dokumentations-Protokoll" style="overflow-x:auto">
+      <table class="responsive-table">
         <thead>
           <tr><th>Zeitpunkt</th><th>ID</th><th>Spiel</th><th>Vorgang</th><th>Von</th><th>An</th><th>Hinweis</th></tr>
         </thead>
@@ -2369,15 +2440,16 @@ function renderDocsTab() {
             .map((ev) => {
               const g = gameMap.get(ev.game_id);
               const ch = chainMap.get(ev.chain_id);
+              const info = docEventInfo(ev);
               return `
                 <tr>
-                  <td style="white-space:nowrap">${formatDate(ev.created_at)}</td>
-                  <td><span class="badge badge-gray">${esc(ch?.ref_code || "–")}</span></td>
-                  <td>${g ? esc(g.title) : ev.game_id}</td>
-                  <td><span class="badge badge-gray">${esc(ev.event_type)}</span></td>
-                  <td>${ev.fromUser ? esc(fullName(ev.fromUser)) : "–"}</td>
-                  <td>${ev.toUser ? esc(fullName(ev.toUser)) : "–"}</td>
-                  <td>${esc(ev.public_note || "")} ${ev.is_short_notice ? `<span class="badge badge-amber">&lt;48h</span>` : ""}</td>
+                  <td data-label="Zeitpunkt" style="white-space:nowrap">${formatDate(ev.created_at)}</td>
+                  <td data-label="ID"><span class="badge badge-gray">${esc(ch?.ref_code || "–")}</span></td>
+                  <td class="cell-main" data-label="Spiel"><strong>${g ? esc(g.title) : ev.game_id}</strong></td>
+                  <td data-label="Vorgang"><span class="badge ${info.cls}">${esc(info.label)}</span></td>
+                  <td data-label="Von">${ev.fromUser ? esc(fullName(ev.fromUser)) : "–"}</td>
+                  <td data-label="An">${ev.toUser ? esc(fullName(ev.toUser)) : "–"}</td>
+                  <td data-label="Hinweis">${esc(ev.public_note || "–")} ${ev.is_short_notice ? `<span class="badge badge-amber">&lt;48h</span>` : ""}</td>
                 </tr>
               `;
             })
@@ -2435,13 +2507,12 @@ function renderPodiumCard({ icon, title, subtitle, badgeName, items, formatVal, 
       ? formatEuro(champ.ch.payout_pool_cents)
       : formatVal(champ);
     const champSub = isJackpot
-      ? (champ.ch.currentAssignee ? `Gepfiffen: ${champ.ch.currentAssignee.last_name}, ${champ.ch.currentAssignee.first_name}` : "Status: Offen")
+      ? formatJackpotChainSub(champ.ch)
       : badgeName;
 
-    const clickAttr = isJackpot
-      ? (champ.ch.current_assignee_id ? `onclick="openPlayerDetailModal(${champ.ch.current_assignee_id})" role="button" tabindex="0"` : "")
-      : `onclick="openPlayerDetailModal(${champ.id})" role="button" tabindex="0"`;
-    const clickClass = (isJackpot ? champ.ch.current_assignee_id : true) ? "stats-clickable" : "";
+    const targetId = isJackpot ? getJackpotTargetPlayerId(champ.ch) : champ.id;
+    const clickAttr = targetId ? `onclick="openPlayerDetailModal(${targetId})" role="button" tabindex="0"` : "";
+    const clickClass = targetId ? "stats-clickable" : "";
 
     champHtml = `
       <div class="podium-champion ${clickClass}" ${clickAttr} title="Details zu ${esc(champName)} anzeigen">
@@ -2463,7 +2534,7 @@ function renderPodiumCard({ icon, title, subtitle, badgeName, items, formatVal, 
       <div class="podium-champion-multi">
         <div class="champion-multi-header">
           <span style="font-size:1.15rem">🥇</span>
-          <span><strong>Platz 1 (Geteilt - ${champions.length} Spieler)</strong></span>
+          <span><strong>Platz 1 (Geteilt - ${champions.length} ${isJackpot ? "Spiele" : "Spieler"})</strong></span>
           <span class="badge badge-gold" style="margin-left:auto">${esc(sharedVal)}</span>
         </div>
         <div class="champion-multi-list">
@@ -2473,12 +2544,11 @@ function renderPodiumCard({ icon, title, subtitle, badgeName, items, formatVal, 
                 ? `${c.item.g.title} (${c.item.ch.ref_code || `Slot ${c.item.ch.slot_number}`})`
                 : `${c.item.last_name}, ${c.item.first_name}`;
               const sub = isJackpot
-                ? (c.item.ch.currentAssignee ? `Gepfiffen: ${c.item.ch.currentAssignee.last_name}, ${c.item.ch.currentAssignee.first_name}` : "Status: Offen")
+                ? formatJackpotChainSub(c.item.ch)
                 : badgeName;
-              const clickAttr = isJackpot
-                ? (c.item.ch.current_assignee_id ? `onclick="openPlayerDetailModal(${c.item.ch.current_assignee_id})" role="button" tabindex="0"` : "")
-                : `onclick="openPlayerDetailModal(${c.item.id})" role="button" tabindex="0"`;
-              const clickClass = (isJackpot ? c.item.ch.current_assignee_id : true) ? "stats-clickable" : "";
+              const targetId = isJackpot ? getJackpotTargetPlayerId(c.item.ch) : c.item.id;
+              const clickAttr = targetId ? `onclick="openPlayerDetailModal(${targetId})" role="button" tabindex="0"` : "";
+              const clickClass = targetId ? "stats-clickable" : "";
               return `
                 <div class="champion-multi-item ${clickClass}" ${clickAttr} title="Details zu ${esc(name)} anzeigen">
                   <span class="champion-multi-bullet">🏆</span>
@@ -2510,14 +2580,17 @@ function renderPodiumCard({ icon, title, subtitle, badgeName, items, formatVal, 
             const val = isJackpot
               ? formatEuro(item.ch.payout_pool_cents)
               : formatVal(item);
-            const clickAttr = isJackpot
-              ? (item.ch.current_assignee_id ? `onclick="openPlayerDetailModal(${item.ch.current_assignee_id})" role="button" tabindex="0"` : "")
-              : `onclick="openPlayerDetailModal(${item.id})" role="button" tabindex="0"`;
-            const clickClass = (isJackpot ? item.ch.current_assignee_id : true) ? "stats-clickable" : "";
+            const sub = isJackpot ? formatJackpotChainSub(item.ch) : "";
+            const targetId = isJackpot ? getJackpotTargetPlayerId(item.ch) : item.id;
+            const clickAttr = targetId ? `onclick="openPlayerDetailModal(${targetId})" role="button" tabindex="0"` : "";
+            const clickClass = targetId ? "stats-clickable" : "";
             return `
               <div class="runner-row ${clickClass}" ${clickAttr} title="Details zu ${esc(name)} anzeigen">
                 <span class="runner-rank" style="min-width:44px;font-size:0.8rem">${rankIcon}</span>
-                <span class="runner-name" title="${esc(name)}">${esc(name)}</span>
+                <div class="runner-name" style="min-width:0" title="${esc(name)}">
+                  <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(name)}</div>
+                  ${sub ? `<div style="font-size:0.72rem;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(sub)}</div>` : ""}
+                </div>
                 <span class="runner-val">${esc(val)}</span>
               </div>
             `;
@@ -2619,10 +2692,8 @@ function renderStatsTab() {
   let filteredPlayers = [...players];
   if (state.statsSearch && state.statsSearch.trim()) {
     const q = state.statsSearch.trim().toLowerCase();
-    filteredPlayers = filteredPlayers.filter(
-      (p) =>
-        `${p.first_name} ${p.last_name}`.toLowerCase().includes(q) ||
-        p.email.toLowerCase().includes(q)
+    filteredPlayers = filteredPlayers.filter((p) =>
+      `${p.first_name} ${p.last_name} ${p.last_name}, ${p.first_name}`.toLowerCase().includes(q)
     );
   }
 
@@ -2675,7 +2746,7 @@ function renderStatsTab() {
                     ${isMe ? `<span class="badge badge-gold" style="font-size:0.7rem;margin-left:4px">Du</span>` : ""}
                     ${badgesHtml}
                   </div>
-                  <div class="player-meta">${roleLabel(p.role)} &bull; ${esc(p.email)}</div>
+                  <div class="player-meta">${roleLabel(p.role)}</div>
                 </td>
                 <td data-label="Gepfiffen">
                   <strong>${p.deployedCount}</strong> ${p.deployedCount === 1 ? "Spiel" : "Spiele"}
@@ -3176,14 +3247,11 @@ function renderModal() {
         <div class="modal">
           <h3 style="margin-top:0">Neuen Spieler anlegen (§ 2)</h3>
           <form id="add-player-form">
-            <div class="form-group"><label>Vorname</label><input id="pl-first" required /></div>
-            <div class="form-group"><label>Nachname</label><input id="pl-last" required /></div>
-            <div class="form-group"><label>E-Mail</label><input type="email" id="pl-email" required /></div>
-            <div class="form-group"><label>Mobilnummer</label><input type="tel" id="pl-mobile" placeholder="z. B. 0171 1234567" /></div>
             <div class="grid-2">
-              <div class="form-group"><label>IBAN (Bankverbindung)</label><input type="text" id="pl-iban" placeholder="DE..." /></div>
-              <div class="form-group"><label>PayPal (E-Mail oder Link)</label><input type="text" id="pl-paypal" placeholder="z. B. paypal.me/name" /></div>
+              <div class="form-group"><label>Vorname</label><input id="pl-first" required /></div>
+              <div class="form-group"><label>Nachname</label><input id="pl-last" required /></div>
             </div>
+            <div class="form-group"><label>Login-E-Mail</label><input type="email" id="pl-email" required /></div>
             <div class="form-group"><label>Initial-Passwort</label><input id="pl-pass" value="rhtc2026" required /></div>
             <div class="form-group">
               <label>Rolle</label>
@@ -3198,6 +3266,9 @@ function renderModal() {
             <div class="form-group">
               <label><input type="checkbox" id="pl-exempt" style="width:auto;margin-right:6px" /> Ehrenamtliche Befreiung (§ 7)</label>
             </div>
+            <p style="font-size:0.78rem;color:var(--muted);margin:4px 0 12px">
+              Telefonnummer und Bank-/PayPal-Daten für Auszahlungen hinterlegt jeder Spieler selbst unter „Mein Profil“.
+            </p>
             <div class="btn-row">
               <button type="submit" class="btn btn-primary">Speichern</button>
               <button type="button" class="btn btn-outline" onclick="closeModal()">Abbrechen</button>
@@ -3220,14 +3291,6 @@ function renderModal() {
               <div class="form-group"><label>Nachname</label><input id="ep-last" value="${esc(p.last_name)}" required /></div>
             </div>
             <div class="grid-2">
-              <div class="form-group"><label>E-Mail</label><input type="email" id="ep-email" value="${esc(p.email)}" required /></div>
-              <div class="form-group"><label>Mobilnummer</label><input type="tel" id="ep-mobile" value="${esc(p.mobile_number || "")}" placeholder="z. B. 0171 1234567" /></div>
-            </div>
-            <div class="grid-2">
-              <div class="form-group"><label>IBAN (Bankverbindung)</label><input type="text" id="ep-iban" value="${esc(p.iban || "")}" placeholder="DE..." /></div>
-              <div class="form-group"><label>PayPal (E-Mail oder Link)</label><input type="text" id="ep-paypal" value="${esc(p.paypal || "")}" placeholder="z. B. paypal.me/name" /></div>
-            </div>
-            <div class="grid-2">
               <div class="form-group">
                 <label>Rolle</label>
                 <select id="ep-role">
@@ -3244,7 +3307,7 @@ function renderModal() {
               </div>
             </div>
             <div class="form-group">
-              <label><input type="checkbox" id="ep-active" style="width:auto;margin-right:6px" ${p.is_active_in_list ? "checked" : ""} /> Aktiv in Schiedsrichterliste (§ 2 Abs. 4)</label>
+              <label><input type="checkbox" id="ep-active" style="width:auto;margin-right:6px" ${p.is_active_in_list ? "checked" : ""} /> Aktiv in Mannschaftsliste (§ 2 Abs. 4)</label>
             </div>
             <div class="form-group">
               <label><input type="checkbox" id="ep-exempt" style="width:auto;margin-right:6px" ${p.is_volunteer_exempt ? "checked" : ""} /> Ehrenamtliche Befreiung (§ 7)</label>
@@ -3258,6 +3321,9 @@ function renderModal() {
                 </button>
               </div>
             </div>
+            <p style="font-size:0.78rem;color:var(--muted);margin:4px 0 12px">
+              Persönliche Kontaktdaten (E-Mail, Telefon) und Bank-/PayPal-Verbindungen verwaltet jeder Spieler aus Datenschutzgründen selbst unter „Mein Profil“.
+            </p>
             <div class="btn-row">
               <button type="submit" class="btn btn-primary">Änderungen speichern</button>
               <button type="button" class="btn btn-outline" onclick="closeModal()">Abbrechen</button>
@@ -3374,9 +3440,7 @@ function renderModal() {
                   ${isMe ? `<span class="badge badge-gold" style="font-size:0.75rem">Du</span>` : ""}
                 </div>
                 <div style="font-size:0.85rem;color:rgba(255,255,255,0.85);margin-top:3px">
-                  ${roleLabel(p.role)} &bull; ${esc(p.email)} ${p.mobile_number ? `&bull; 📞 ${esc(p.mobile_number)}` : ""}
-                  ${p.iban ? `<br>🏦 IBAN: ${esc(p.iban)}` : ""}
-                  ${p.paypal ? `${p.iban ? " &bull; " : "<br>"}🅿️ PayPal: ${esc(p.paypal)}` : ""}
+                  ${roleLabel(p.role)}
                 </div>
                 <div style="font-size:0.75rem;color:rgba(255,255,255,0.7);margin-top:2px">
                   ${isAllTime ? "🏆 Daten über alle Saisons hinweg (Ewige Tabelle)" : `Saison: <strong>${esc(currentSeason?.name || "Aktuell")}</strong>`}
@@ -3597,18 +3661,24 @@ function renderModal() {
             </div>
           </div>
 
-          <!-- Bankverbindung / Auszahlungskonto des Spielers -->
-          <div style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:6px;padding:10px 12px;margin-bottom:16px;font-size:0.83rem">
-            <strong>💳 Auszahlungskonto des Spielers:</strong>
-            ${
-              player.iban || player.paypal
-                ? `<div style="margin-top:4px">
-                    ${player.iban ? `<div>🏦 <strong>IBAN:</strong> <span style="user-select:all">${esc(player.iban)}</span></div>` : ""}
-                    ${player.paypal ? `<div>🅿️ <strong>PayPal:</strong> <span style="user-select:all">${esc(player.paypal)}</span></div>` : ""}
-                  </div>`
-                : `<div style="color:var(--muted);margin-top:2px">Keine Bankverbindung (IBAN / PayPal) hinterlegt.</div>`
-            }
-          </div>
+          <!-- Bankverbindung / Auszahlungskonto des Spielers (nur für Kassenwart bei tatsächlicher Auszahlung) -->
+          ${
+            state.user.role === "KASSENWART" && totalPayoutCreditCents > 0
+              ? `
+                <div style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:6px;padding:10px 12px;margin-bottom:16px;font-size:0.83rem">
+                  <strong>💳 Auszahlungskonto des Spielers:</strong>
+                  ${
+                    player.iban || player.paypal
+                      ? `<div style="margin-top:4px">
+                          ${player.iban ? `<div>🏦 <strong>IBAN:</strong> <span style="user-select:all">${esc(player.iban)}</span></div>` : ""}
+                          ${player.paypal ? `<div>🅿️ <strong>PayPal:</strong> <span style="user-select:all">${esc(player.paypal)}</span></div>` : ""}
+                        </div>`
+                      : `<div style="color:var(--muted);margin-top:2px">Keine Bankverbindung (IBAN / PayPal) hinterlegt.</div>`
+                  }
+                </div>
+              `
+              : ""
+          }
 
           <!-- 1. Bereitstehende Topf-Auszahlungen -->
           <div style="font-size:0.88rem;font-weight:700;margin:12px 0 6px;color:var(--text)">
@@ -4059,7 +4129,7 @@ function render() {
                 <div class="drawer-section-title" style="margin-top:16px">Verwaltung &amp; Regeln (§§ 1–8)</div>
                 <button class="drawer-nav-item ${state.tab === "players" ? "active" : ""}" onclick="setTab('players')">
                   <span class="drawer-nav-icon">👥</span>
-                  <span class="drawer-nav-text">Schiedsrichterliste (§ 2)</span>
+                  <span class="drawer-nav-text">Mannschaftsliste</span>
                 </button>
                 <button class="drawer-nav-item ${state.tab === "treasury" ? "active" : ""}" onclick="setTab('treasury')">
                   <span class="drawer-nav-icon">💰</span>
@@ -4326,10 +4396,6 @@ function attachModalHandlers() {
           body: JSON.stringify({
             firstName: document.getElementById("ep-first").value,
             lastName: document.getElementById("ep-last").value,
-            email: document.getElementById("ep-email").value,
-            mobileNumber: document.getElementById("ep-mobile").value,
-            iban: (document.getElementById("ep-iban")?.value || "").trim(),
-            paypal: (document.getElementById("ep-paypal")?.value || "").trim(),
             role: document.getElementById("ep-role").value,
             listOrderOverride: orderVal === "" ? null : Number(orderVal),
             isActiveInList: document.getElementById("ep-active").checked,
@@ -4356,9 +4422,6 @@ function attachModalHandlers() {
             firstName: document.getElementById("pl-first").value,
             lastName: document.getElementById("pl-last").value,
             email: document.getElementById("pl-email").value,
-            mobileNumber: document.getElementById("pl-mobile").value,
-            iban: (document.getElementById("pl-iban")?.value || "").trim(),
-            paypal: (document.getElementById("pl-paypal")?.value || "").trim(),
             password: document.getElementById("pl-pass").value,
             role: document.getElementById("pl-role").value,
             isVolunteerExempt: document.getElementById("pl-exempt").checked,
@@ -4511,10 +4574,6 @@ window.exportPlayersCsv = () => {
   const headers = [
     "Nachname",
     "Vorname",
-    "Email",
-    "Mobilnummer",
-    "IBAN",
-    "PayPal",
     "Rolle",
     "Aktiv",
     "Ehrenamt_Par7",
@@ -4527,10 +4586,6 @@ window.exportPlayersCsv = () => {
   const rows = state.data.players.map((p) => [
     p.last_name,
     p.first_name,
-    p.email,
-    p.mobile_number || "",
-    p.iban || "",
-    p.paypal || "",
     roleLabel(p.role),
     p.is_active_in_list ? "Ja" : "Nein",
     p.is_volunteer_exempt ? "Ja" : "Nein",
@@ -4540,7 +4595,7 @@ window.exportPlayersCsv = () => {
     (p.paidCents / 100).toFixed(2).replace(".", ","),
     (p.earnedPayoutCents / 100).toFixed(2).replace(".", ","),
   ]);
-  downloadCsv(`RHTC_Einsatzliste_${sName}.csv`, headers, rows);
+  downloadCsv(`RHTC_Mannschaftsliste_${sName}.csv`, headers, rows);
 };
 
 window.exportTreasuryCsv = () => {
@@ -4573,12 +4628,12 @@ window.exportTreasuryCsv = () => {
       formatDate(ev.created_at),
       g ? g.title : ev.game_id,
       fullName(ev.fromUser),
-      ev.event_type,
+      docEventInfo(ev).label,
       (ev.fee_total_cents / 100).toFixed(2).replace(".", ","),
       (ev.waived_amount_cents / 100).toFixed(2).replace(".", ","),
       (due / 100).toFixed(2).replace(".", ","),
-      ev.payment_status,
-      ev.hardship_status,
+      paymentStatusLabel(ev.payment_status),
+      hardshipStatusLabel(ev.hardship_status),
       ...(isTreasurer ? [ev.hardship_reason_confidential || ""] : []),
     ];
   });
