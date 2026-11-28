@@ -1241,6 +1241,7 @@ function renderPlayersTab() {
             }
             <span class="badge badge-gray">${roleLabel(p.role)}</span>
           </div>
+          ${state.user.role === "ADMIN" && p.email ? `<div class="player-meta">${esc(p.email)}</div>` : ""}
         </td>
         <td data-label="Status" class="col-status">
           <div class="player-badges">
@@ -3242,6 +3243,7 @@ function renderModal() {
   }
 
   if (state.modal.type === "addPlayer") {
+    const isAdmin = state.user.role === "ADMIN";
     return `
       <div class="modal-backdrop" onclick="if(event.target===this) closeModal()">
         <div class="modal">
@@ -3252,6 +3254,17 @@ function renderModal() {
               <div class="form-group"><label>Nachname</label><input id="pl-last" required /></div>
             </div>
             <div class="form-group"><label>Login-E-Mail</label><input type="email" id="pl-email" required /></div>
+            ${
+              isAdmin
+                ? `
+                  <div class="form-group"><label>Mobilnummer (optional)</label><input type="tel" id="pl-mobile" placeholder="z. B. 0171 1234567" /></div>
+                  <div class="grid-2">
+                    <div class="form-group"><label>IBAN (Bankverbindung)</label><input type="text" id="pl-iban" placeholder="DE..." /></div>
+                    <div class="form-group"><label>PayPal (E-Mail oder Link)</label><input type="text" id="pl-paypal" placeholder="z. B. paypal.me/name" /></div>
+                  </div>
+                `
+                : ""
+            }
             <div class="form-group"><label>Initial-Passwort</label><input id="pl-pass" value="rhtc2026" required /></div>
             <div class="form-group">
               <label>Rolle</label>
@@ -3266,9 +3279,13 @@ function renderModal() {
             <div class="form-group">
               <label><input type="checkbox" id="pl-exempt" style="width:auto;margin-right:6px" /> Ehrenamtliche Befreiung (§ 7)</label>
             </div>
-            <p style="font-size:0.78rem;color:var(--muted);margin:4px 0 12px">
-              Telefonnummer und Bank-/PayPal-Daten für Auszahlungen hinterlegt jeder Spieler selbst unter „Mein Profil“.
-            </p>
+            ${
+              !isAdmin
+                ? `<p style="font-size:0.78rem;color:var(--muted);margin:4px 0 12px">
+                    Telefonnummer und Bank-/PayPal-Daten für Auszahlungen hinterlegt jeder Spieler selbst unter „Mein Profil“ (oder ein Admin).
+                  </p>`
+                : ""
+            }
             <div class="btn-row">
               <button type="submit" class="btn btn-primary">Speichern</button>
               <button type="button" class="btn btn-outline" onclick="closeModal()">Abbrechen</button>
@@ -3281,6 +3298,7 @@ function renderModal() {
 
   if (state.modal.type === "editPlayer") {
     const p = state.modal.player;
+    const isAdmin = state.user.role === "ADMIN";
     return `
       <div class="modal-backdrop" onclick="if(event.target===this) closeModal()">
         <div class="modal">
@@ -3290,6 +3308,20 @@ function renderModal() {
               <div class="form-group"><label>Vorname</label><input id="ep-first" value="${esc(p.first_name)}" required /></div>
               <div class="form-group"><label>Nachname</label><input id="ep-last" value="${esc(p.last_name)}" required /></div>
             </div>
+            ${
+              isAdmin
+                ? `
+                  <div class="grid-2">
+                    <div class="form-group"><label>E-Mail</label><input type="email" id="ep-email" value="${esc(p.email || "")}" required /></div>
+                    <div class="form-group"><label>Mobilnummer</label><input type="tel" id="ep-mobile" value="${esc(p.mobile_number || "")}" placeholder="z. B. 0171 1234567" /></div>
+                  </div>
+                  <div class="grid-2">
+                    <div class="form-group"><label>IBAN (Bankverbindung)</label><input type="text" id="ep-iban" value="${esc(p.iban || "")}" placeholder="DE..." /></div>
+                    <div class="form-group"><label>PayPal (E-Mail oder Link)</label><input type="text" id="ep-paypal" value="${esc(p.paypal || "")}" placeholder="z. B. paypal.me/name" /></div>
+                  </div>
+                `
+                : ""
+            }
             <div class="grid-2">
               <div class="form-group">
                 <label>Rolle</label>
@@ -3321,9 +3353,13 @@ function renderModal() {
                 </button>
               </div>
             </div>
-            <p style="font-size:0.78rem;color:var(--muted);margin:4px 0 12px">
-              Persönliche Kontaktdaten (E-Mail, Telefon) und Bank-/PayPal-Verbindungen verwaltet jeder Spieler aus Datenschutzgründen selbst unter „Mein Profil“.
-            </p>
+            ${
+              !isAdmin
+                ? `<p style="font-size:0.78rem;color:var(--muted);margin:4px 0 12px">
+                    Persönliche Kontaktdaten (E-Mail, Telefon) und Bank-/PayPal-Verbindungen sind aus Datenschutzgründen nur für den Spieler selbst („Mein Profil“) und Admins sichtbar/änderbar.
+                  </p>`
+                : ""
+            }
             <div class="btn-row">
               <button type="submit" class="btn btn-primary">Änderungen speichern</button>
               <button type="button" class="btn btn-outline" onclick="closeModal()">Abbrechen</button>
@@ -3661,9 +3697,9 @@ function renderModal() {
             </div>
           </div>
 
-          <!-- Bankverbindung / Auszahlungskonto des Spielers (nur für Kassenwart bei tatsächlicher Auszahlung) -->
+          <!-- Bankverbindung / Auszahlungskonto des Spielers (nur für Kassenwart & Admin bei tatsächlicher Auszahlung) -->
           ${
-            state.user.role === "KASSENWART" && totalPayoutCreditCents > 0
+            (state.user.role === "KASSENWART" || state.user.role === "ADMIN") && totalPayoutCreditCents > 0
               ? `
                 <div style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:6px;padding:10px 12px;margin-bottom:16px;font-size:0.83rem">
                   <strong>💳 Auszahlungskonto des Spielers:</strong>
@@ -4391,11 +4427,20 @@ function attachModalHandlers() {
         const orderVal = document.getElementById("ep-order").value.trim();
         const passVal = document.getElementById("ep-pass").value.trim();
 
+        const epEmailEl = document.getElementById("ep-email");
+        const epMobileEl = document.getElementById("ep-mobile");
+        const epIbanEl = document.getElementById("ep-iban");
+        const epPaypalEl = document.getElementById("ep-paypal");
+
         await api(`/api/users/${playerId}`, {
           method: "PATCH",
           body: JSON.stringify({
             firstName: document.getElementById("ep-first").value,
             lastName: document.getElementById("ep-last").value,
+            ...(epEmailEl ? { email: epEmailEl.value } : {}),
+            ...(epMobileEl ? { mobileNumber: epMobileEl.value } : {}),
+            ...(epIbanEl ? { iban: epIbanEl.value.trim() } : {}),
+            ...(epPaypalEl ? { paypal: epPaypalEl.value.trim() } : {}),
             role: document.getElementById("ep-role").value,
             listOrderOverride: orderVal === "" ? null : Number(orderVal),
             isActiveInList: document.getElementById("ep-active").checked,
@@ -4416,12 +4461,19 @@ function attachModalHandlers() {
     plForm.onsubmit = async (e) => {
       e.preventDefault();
       try {
+        const plMobileEl = document.getElementById("pl-mobile");
+        const plIbanEl = document.getElementById("pl-iban");
+        const plPaypalEl = document.getElementById("pl-paypal");
+
         await api("/api/users", {
           method: "POST",
           body: JSON.stringify({
             firstName: document.getElementById("pl-first").value,
             lastName: document.getElementById("pl-last").value,
             email: document.getElementById("pl-email").value,
+            ...(plMobileEl ? { mobileNumber: plMobileEl.value } : {}),
+            ...(plIbanEl ? { iban: plIbanEl.value.trim() } : {}),
+            ...(plPaypalEl ? { paypal: plPaypalEl.value.trim() } : {}),
             password: document.getElementById("pl-pass").value,
             role: document.getElementById("pl-role").value,
             isVolunteerExempt: document.getElementById("pl-exempt").checked,
@@ -4571,9 +4623,11 @@ window.deleteSeason = async (seasonId, seasonName) => {
 
 window.exportPlayersCsv = () => {
   const sName = (state.data.season?.name || "Saison").replace(/\s+/g, "_");
+  const isAdmin = state.user.role === "ADMIN";
   const headers = [
     "Nachname",
     "Vorname",
+    ...(isAdmin ? ["Email", "Mobilnummer", "IBAN", "PayPal"] : []),
     "Rolle",
     "Aktiv",
     "Ehrenamt_Par7",
@@ -4586,6 +4640,7 @@ window.exportPlayersCsv = () => {
   const rows = state.data.players.map((p) => [
     p.last_name,
     p.first_name,
+    ...(isAdmin ? [p.email || "", p.mobile_number || "", p.iban || "", p.paypal || ""] : []),
     roleLabel(p.role),
     p.is_active_in_list ? "Ja" : "Nein",
     p.is_volunteer_exempt ? "Ja" : "Nein",

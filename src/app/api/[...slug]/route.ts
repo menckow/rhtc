@@ -207,7 +207,7 @@ export async function GET(
 
     const sanitizeUserForViewer = (u: UserRow | SafeUser): SafeUser => {
       const { password_hash: _, ...safe } = u as UserRow;
-      if (safe.id === user.id) return safe;
+      if (safe.id === user.id || user.role === "ADMIN") return safe;
       const canSeeBankForPayout = user.role === "KASSENWART";
       const canSeePhoneForReminders =
         user.role === "SCHIEDSRICHTERWART" || user.role === "KASSENWART";
@@ -1751,33 +1751,36 @@ export async function PATCH(
       updates.last_name = lastName;
     }
 
-    const email = body.email !== undefined ? String(body.email).trim().toLowerCase() : undefined;
-    if (email !== undefined) {
-      if (!email || !email.includes("@")) {
-        return NextResponse.json({ error: "Bitte eine gültige E-Mail-Adresse angeben." }, { status: 400 });
-      }
-      if (email !== existing.email) {
-        const dup = await repo.users.findByEmail(email);
-        if (dup && dup.id !== targetId) {
-          return NextResponse.json({ error: "Diese E-Mail wird bereits von einem anderen Spieler verwendet." }, { status: 400 });
+    // E-Mail, Telefonnummer und Bankverbindungen fremder Spieler darf nur ADMIN ändern
+    if (user.role === "ADMIN") {
+      const email = body.email !== undefined ? String(body.email).trim().toLowerCase() : undefined;
+      if (email !== undefined) {
+        if (!email || !email.includes("@")) {
+          return NextResponse.json({ error: "Bitte eine gültige E-Mail-Adresse angeben." }, { status: 400 });
         }
+        if (email !== existing.email) {
+          const dup = await repo.users.findByEmail(email);
+          if (dup && dup.id !== targetId) {
+            return NextResponse.json({ error: "Diese E-Mail wird bereits von einem anderen Spieler verwendet." }, { status: 400 });
+          }
+        }
+        updates.email = email;
       }
-      updates.email = email;
-    }
 
-    const mobile = body.mobileNumber !== undefined ? body.mobileNumber : body.mobile_number;
-    if (mobile !== undefined) {
-      updates.mobile_number = String(mobile).trim() || null;
-    }
+      const mobile = body.mobileNumber !== undefined ? body.mobileNumber : body.mobile_number;
+      if (mobile !== undefined) {
+        updates.mobile_number = String(mobile).trim() || null;
+      }
 
-    const iban = body.iban !== undefined ? body.iban : body.payment_info;
-    if (iban !== undefined) {
-      updates.iban = String(iban).trim() || null;
-    }
+      const iban = body.iban !== undefined ? body.iban : body.payment_info;
+      if (iban !== undefined) {
+        updates.iban = String(iban).trim() || null;
+      }
 
-    const paypal = body.paypal !== undefined ? body.paypal : body.paypal_me;
-    if (paypal !== undefined) {
-      updates.paypal = String(paypal).trim() || null;
+      const paypal = body.paypal !== undefined ? body.paypal : body.paypal_me;
+      if (paypal !== undefined) {
+        updates.paypal = String(paypal).trim() || null;
+      }
     }
 
     const allowedRoles = ["PLAYER", "SCHIEDSRICHTERWART", "KASSENWART", "VORSTAND", "ADMIN"];
